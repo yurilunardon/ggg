@@ -154,15 +154,36 @@ echo "  📁 Creating bundle structure..."
 mkdir -p "$APP_MACOS"
 mkdir -p "$APP_RESOURCES"
 
-# Copy executable
+# Copy executable using ditto to preserve all attributes
 echo "  📋 Copying executable..."
-cp "$EXECUTABLE_PATH" "$APP_MACOS/$APP_NAME"
+if command -v ditto &> /dev/null; then
+    ditto "$EXECUTABLE_PATH" "$APP_MACOS/$APP_NAME"
+else
+    cp -pRL "$EXECUTABLE_PATH" "$APP_MACOS/$APP_NAME"
+fi
 chmod +x "$APP_MACOS/$APP_NAME"
+
+# Verify executable
+if [ ! -x "$APP_MACOS/$APP_NAME" ]; then
+    echo -e "${RED}❌ Error: Executable not properly copied${NC}"
+    exit 1
+fi
+
+# Check if it's a valid Mach-O binary
+file "$APP_MACOS/$APP_NAME" | grep -q "Mach-O" || {
+    echo -e "${RED}❌ Error: Copied file is not a valid executable${NC}"
+    file "$APP_MACOS/$APP_NAME"
+    exit 1
+}
 
 # Copy Info.plist
 echo "  📋 Copying Info.plist..."
 if [ -f "$PROJECT_DIR/HandyShots/Resources/Info.plist" ]; then
     cp "$PROJECT_DIR/HandyShots/Resources/Info.plist" "$APP_CONTENTS/Info.plist"
+
+    # Replace Xcode build variables with actual values
+    sed -i '' "s/\$(EXECUTABLE_NAME)/$APP_NAME/g" "$APP_CONTENTS/Info.plist"
+    sed -i '' "s/\${EXECUTABLE_NAME}/$APP_NAME/g" "$APP_CONTENTS/Info.plist"
 else
     echo -e "${YELLOW}⚠️  Info.plist not found, creating basic one...${NC}"
     cat > "$APP_CONTENTS/Info.plist" << EOF
