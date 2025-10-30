@@ -8,7 +8,6 @@
 
 import Foundation
 import Combine
-import AppKit
 
 /// Monitors screenshot folder location changes via polling
 class FolderMonitor: ObservableObject {
@@ -16,6 +15,9 @@ class FolderMonitor: ObservableObject {
 
     /// Current monitored folder path
     @Published var currentFolder: String = ""
+
+    /// Folder change notification message (shows banner when set)
+    @Published var folderChangeMessage: String? = nil
 
     // MARK: - Private Properties
 
@@ -134,31 +136,12 @@ class FolderMonitor: ObservableObject {
             // Always update current folder to match system
             updateFolder(path: systemFolder)
 
-            // Show notification to user
-            showFolderChangeNotification(newFolder: systemFolder)
+            // Set notification message (will trigger banner in UI)
+            DispatchQueue.main.async { [weak self] in
+                self?.folderChangeMessage = "Screenshot folder changed to: \(FolderDetector.getFolderDisplayName(path: systemFolder))"
+            }
         } else {
             print("✅ No folder change detected")
-        }
-    }
-
-    /// Show a notification when screenshot folder changes
-    /// - Parameter newFolder: The new folder path
-    private func showFolderChangeNotification(newFolder: String) {
-        DispatchQueue.main.async {
-            let alert = NSAlert()
-            alert.messageText = "Screenshot Folder Changed"
-            alert.informativeText = "The system screenshot folder has been updated to:\n\n\(newFolder)"
-            alert.alertStyle = .informational
-            alert.addButton(withTitle: "OK")
-
-            // Show as floating alert
-            if let window = NSApp.windows.first {
-                alert.beginSheetModal(for: window)
-            } else {
-                alert.runModal()
-            }
-
-            print("✅ Notification shown to user about folder change")
         }
     }
 }

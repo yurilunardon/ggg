@@ -61,6 +61,12 @@ struct PopoverView: View {
 
             Divider()
 
+            // Notification banner (if folder changed)
+            if let message = folderMonitor.folderChangeMessage {
+                notificationBanner(message: message)
+                    .animation(.spring(response: 0.4, dampingFraction: 0.8), value: folderMonitor.folderChangeMessage)
+            }
+
             // Content area (no scroll, compact layout)
             VStack(alignment: .leading, spacing: 12) {
                 // Folder information section
@@ -214,6 +220,44 @@ struct PopoverView: View {
             Text(text)
                 .font(.caption2)
                 .foregroundColor(.secondary)
+        }
+    }
+
+    /// Notification banner for folder changes
+    private func notificationBanner(message: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .font(.callout)
+                .foregroundColor(.blue)
+
+            Text(message)
+                .font(.caption)
+                .foregroundColor(.primary)
+
+            Spacer()
+
+            Button(action: {
+                withAnimation {
+                    folderMonitor.folderChangeMessage = nil
+                }
+            }) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.callout)
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color.blue.opacity(0.1))
+        .transition(.move(edge: .top).combined(with: .opacity))
+        .onAppear {
+            // Auto-dismiss after 5 seconds
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                withAnimation {
+                    folderMonitor.folderChangeMessage = nil
+                }
+            }
         }
     }
 
