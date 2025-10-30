@@ -24,10 +24,19 @@ struct PopoverView: View {
     /// Currently monitored screenshot folder
     @AppStorage("screenshotFolder") private var screenshotFolder: String = ""
 
+    /// Time filter in minutes from settings
+    @AppStorage("timeFilter") private var timeFilter: Int = 10
+
     // MARK: - State Properties
 
     /// Show splash screen on first open
     @State private var showSplash: Bool = true
+
+    /// List of recent screenshots
+    @State private var screenshots: [Screenshot] = []
+
+    /// Timer for refreshing screenshots
+    @State private var refreshTimer: Timer?
 
     // MARK: - Body
 
@@ -56,8 +65,8 @@ struct PopoverView: View {
 
     private var mainInterface: some View {
         VStack(spacing: 0) {
-            // Compact Header
-            header
+            // Compact Header with folder info
+            compactHeader
 
             Divider()
 
@@ -67,161 +76,107 @@ struct PopoverView: View {
                     .animation(.spring(response: 0.4, dampingFraction: 0.8), value: folderMonitor.folderChangeMessage)
             }
 
-            // Content area (no scroll, compact layout)
-            VStack(alignment: .leading, spacing: 12) {
-                // Folder information section
-                folderSection
-
-                Spacer()
-
-                // Compact placeholder section
-                placeholderSection
-            }
-            .padding(12)
+            // Screenshot grid
+            screenshotGrid
+        }
+        .onAppear {
+            refreshScreenshots()
+            startRefreshTimer()
+        }
+        .onDisappear {
+            stopRefreshTimer()
         }
     }
 
-    // MARK: - Header
+    // MARK: - Compact Header
 
-    private var header: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "camera.fill")
-                .font(.title3)
-                .foregroundColor(.accentColor)
+    private var compactHeader: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            // App name row
+            HStack(spacing: 8) {
+                Image(systemName: "camera.fill")
+                    .font(.title3)
+                    .foregroundColor(.accentColor)
 
-            Text("HandyShots")
-                .font(.headline)
-                .fontWeight(.bold)
+                Text("HandyShots")
+                    .font(.headline)
+                    .fontWeight(.bold)
 
-            Spacer()
+                Spacer()
 
-            // Change folder button
-            Button(action: {
-                changeFolderAction()
-            }) {
-                Image(systemName: "folder.badge.gearshape")
-                    .font(.body)
+                // Status indicator
+                Circle()
+                    .fill(folderExists ? Color.green : Color.red)
+                    .frame(width: 6, height: 6)
             }
-            .buttonStyle(.plain)
-            .help("Change screenshot folder")
+
+            // Monitored folder row
+            HStack(spacing: 8) {
+                Image(systemName: "folder.fill")
+                    .font(.caption)
+                    .foregroundColor(.blue)
+
+                Text(FolderDetector.getFolderDisplayName(path: folderMonitor.currentFolder))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
+                Spacer()
+
+                // Change folder button
+                Button(action: {
+                    changeFolderAction()
+                }) {
+                    Image(systemName: "folder.badge.gearshape")
+                        .font(.caption)
+                }
+                .buttonStyle(.plain)
+                .help("Change screenshot folder")
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(Color.gray.opacity(0.05))
     }
 
-    // MARK: - Folder Section
+    // MARK: - Screenshot Grid
 
-    private var folderSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Text("Monitored Folder")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
+    private var screenshotGrid: some View {
+        ScrollView {
+            if screenshots.isEmpty {
+                // Empty state
+                VStack(spacing: 12) {
+                    Image(systemName: "photo.on.rectangle.angled")
+                        .font(.system(size: 40))
+                        .foregroundColor(.gray.opacity(0.5))
 
-                Spacer()
-
-                // Status indicator
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(folderExists ? Color.green : Color.red)
-                        .frame(width: 8, height: 8)
-                    Text(folderExists ? "Active" : "Not found")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-            }
-
-            HStack(spacing: 10) {
-                Image(systemName: "folder.fill")
-                    .font(.title2)
-                    .foregroundColor(.blue)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(FolderDetector.getFolderDisplayName(path: folderMonitor.currentFolder))
-                        .font(.callout)
-                        .fontWeight(.medium)
-
-                    Text(folderMonitor.currentFolder)
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-
-                Spacer()
-
-                // Compact change button
-                Button(action: {
-                    changeFolderAction()
-                }) {
-                    Image(systemName: "folder.badge.plus")
-                        .font(.callout)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-            }
-            .padding(8)
-            .background(Color.gray.opacity(0.08))
-            .cornerRadius(8)
-        }
-    }
-
-    // MARK: - Placeholder Section
-
-    private var placeholderSection: some View {
-        VStack(spacing: 8) {
-            HStack {
-                Image(systemName: "photo.on.rectangle.angled")
-                    .font(.title2)
-                    .foregroundColor(.gray.opacity(0.5))
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Screenshot Gallery")
+                    Text("No screenshots yet")
                         .font(.subheadline)
-                        .fontWeight(.semibold)
                         .foregroundColor(.secondary)
 
-                    Text("Coming soon")
+                    Text("Screenshots from the last \(timeFilter) minutes will appear here")
                         .font(.caption2)
                         .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
                 }
-
-                Spacer()
-            }
-
-            // Compact features grid (2 columns)
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    featureBadge(icon: "photo.stack", text: "Thumbnails")
-                    featureBadge(icon: "hand.draw", text: "Drag & drop")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding()
+            } else {
+                // Grid of screenshots
+                LazyVGrid(columns: [
+                    GridItem(.adaptive(minimum: 80), spacing: 8)
+                ], spacing: 8) {
+                    ForEach(screenshots) { screenshot in
+                        ScreenshotThumbnailView(screenshot: screenshot)
+                    }
                 }
-                VStack(alignment: .leading, spacing: 4) {
-                    featureBadge(icon: "magnifyingglass", text: "Quick Look")
-                    featureBadge(icon: "doc.text.viewfinder", text: "OCR")
-                }
-                Spacer()
+                .padding(12)
             }
         }
-        .padding(8)
-        .background(Color.gray.opacity(0.05))
-        .cornerRadius(8)
     }
 
     // MARK: - Helper Views
-
-    private func featureBadge(icon: String, text: String) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: icon)
-                .font(.caption)
-                .frame(width: 16)
-                .foregroundColor(.gray)
-
-            Text(text)
-                .font(.caption2)
-                .foregroundColor(.secondary)
-        }
-    }
 
     /// Notification banner for folder changes
     private func notificationBanner(message: String) -> some View {
@@ -252,8 +207,8 @@ struct PopoverView: View {
         .background(Color.blue.opacity(0.1))
         .transition(.move(edge: .top).combined(with: .opacity))
         .onAppear {
-            // Auto-dismiss after 5 seconds
-            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+            // Auto-dismiss after 10 seconds
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
                 withAnimation {
                     folderMonitor.folderChangeMessage = nil
                 }
@@ -294,6 +249,89 @@ struct PopoverView: View {
 
                 print("✅ Screenshot folder changed to: \(path)")
             }
+        }
+    }
+
+    // MARK: - Screenshot Management
+
+    /// Refresh the list of screenshots
+    private func refreshScreenshots() {
+        let folder = folderMonitor.currentFolder
+        let minutes = timeFilter
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let scanned = ScreenshotScanner.scanFolder(path: folder, withinMinutes: minutes)
+
+            DispatchQueue.main.async {
+                self.screenshots = scanned
+            }
+        }
+    }
+
+    /// Start timer to refresh screenshots periodically
+    private func startRefreshTimer() {
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { _ in
+            refreshScreenshots()
+        }
+    }
+
+    /// Stop refresh timer
+    private func stopRefreshTimer() {
+        refreshTimer?.invalidate()
+        refreshTimer = nil
+    }
+}
+
+// MARK: - Screenshot Thumbnail View
+
+struct ScreenshotThumbnailView: View {
+    let screenshot: Screenshot
+
+    var body: some View {
+        VStack(spacing: 4) {
+            // Thumbnail image
+            if let thumbnail = screenshot.thumbnail {
+                Image(nsImage: thumbnail)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: 80, height: 80)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                    )
+            } else {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.gray.opacity(0.2))
+                    .frame(width: 80, height: 80)
+                    .overlay(
+                        Image(systemName: "photo")
+                            .foregroundColor(.gray)
+                    )
+            }
+
+            // Time ago text
+            Text(timeAgo(from: screenshot.createdDate))
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        }
+        .onTapGesture {
+            // Open in Quick Look or Finder
+            NSWorkspace.shared.open(screenshot.url)
+        }
+    }
+
+    private func timeAgo(from date: Date) -> String {
+        let seconds = Int(Date().timeIntervalSince(date))
+        let minutes = seconds / 60
+        let hours = minutes / 60
+
+        if seconds < 60 {
+            return "just now"
+        } else if minutes < 60 {
+            return "\(minutes)m ago"
+        } else {
+            return "\(hours)h ago"
         }
     }
 }
