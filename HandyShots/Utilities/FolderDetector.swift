@@ -53,18 +53,59 @@ class FolderDetector {
     /// Read screenshot location from system preferences
     /// - Returns: Path from com.apple.screencapture preferences, or nil
     private static func readScreenshotPreference() -> String? {
-        // Read from macOS system preferences
-        // Key: "location" in domain "com.apple.screencapture"
+        // Method 1: Try using UserDefaults (most reliable)
+        if let path = UserDefaults(suiteName: "com.apple.screencapture")?.string(forKey: "location") {
+            print("✅ Found screenshot location via UserDefaults: \(path)")
+            return standardizePath(path)
+        }
+
+        // Method 2: Try CFPreferences
         let key = "location" as CFString
         let domain = "com.apple.screencapture" as CFString
 
-        guard let value = CFPreferencesCopyAppValue(key, domain) else {
-            return nil
+        if let value = CFPreferencesCopyAppValue(key, domain) {
+            if let path = value as? String {
+                print("✅ Found screenshot location via CFPreferences: \(path)")
+                return standardizePath(path)
+            }
         }
 
-        // Convert CFPropertyList to String
-        if let path = value as? String {
+        // Method 3: Try using 'defaults read' command
+        if let path = readScreenshotViaDefaults() {
+            print("✅ Found screenshot location via defaults command: \(path)")
             return standardizePath(path)
+        }
+
+        print("⚠️ No screenshot location found in system preferences")
+        return nil
+    }
+
+    /// Read screenshot location using 'defaults read' command
+    /// - Returns: Path from defaults command, or nil
+    private static func readScreenshotViaDefaults() -> String? {
+        let task = Process()
+        let pipe = Pipe()
+
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
+        task.arguments = ["read", "com.apple.screencapture", "location"]
+        task.standardOutput = pipe
+        task.standardError = Pipe()
+
+        do {
+            try task.run()
+            task.waitUntilExit()
+
+            guard task.terminationStatus == 0 else {
+                return nil
+            }
+
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            if let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !output.isEmpty {
+                return output
+            }
+        } catch {
+            print("⚠️ Error reading defaults: \(error.localizedDescription)")
         }
 
         return nil

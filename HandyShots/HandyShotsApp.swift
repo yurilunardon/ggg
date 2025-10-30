@@ -77,14 +77,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Configure popover with content and behavior
     private func setupPopover() {
+        // Initialize folder monitor first
+        folderMonitor = FolderMonitor()
+
         popover.contentSize = NSSize(width: 400, height: 300)
         popover.behavior = .transient // Close when clicking outside
-        popover.contentViewController = NSHostingController(rootView: PopoverView())
+
+        // Pass folder monitor to PopoverView
+        let popoverView = PopoverView()
+            .environmentObject(folderMonitor!)
+
+        popover.contentViewController = NSHostingController(rootView: popoverView)
     }
 
     /// Initialize and start folder monitoring
     private func startFolderMonitoring() {
-        folderMonitor = FolderMonitor()
         folderMonitor?.startMonitoring()
     }
 
