@@ -96,18 +96,38 @@ swift build -c release --arch arm64 --arch x86_64 || {
     swift build -c release
 }
 
-EXECUTABLE_PATH="$PROJECT_DIR/.build/release/$APP_NAME"
+# Try multiple possible build output locations
+POSSIBLE_PATHS=(
+    "$PROJECT_DIR/.build/release/$APP_NAME"
+    "$PROJECT_DIR/.build/apple/Products/Release/$APP_NAME"
+    "$PROJECT_DIR/.build/arm64-apple-macosx/release/$APP_NAME"
+    "$PROJECT_DIR/.build/x86_64-apple-macosx/release/$APP_NAME"
+)
 
-if [ ! -f "$EXECUTABLE_PATH" ]; then
-    # Try alternate path
-    EXECUTABLE_PATH="$PROJECT_DIR/.build/arm64-apple-macosx/release/$APP_NAME"
-    if [ ! -f "$EXECUTABLE_PATH" ]; then
-        EXECUTABLE_PATH="$PROJECT_DIR/.build/x86_64-apple-macosx/release/$APP_NAME"
-        if [ ! -f "$EXECUTABLE_PATH" ]; then
-            echo -e "${RED}❌ Error: Executable not found after build${NC}"
-            exit 1
-        fi
+EXECUTABLE_PATH=""
+for path in "${POSSIBLE_PATHS[@]}"; do
+    if [ -f "$path" ]; then
+        EXECUTABLE_PATH="$path"
+        break
     fi
+done
+
+# If still not found, try to find it dynamically
+if [ -z "$EXECUTABLE_PATH" ] || [ ! -f "$EXECUTABLE_PATH" ]; then
+    echo "  🔍 Searching for executable in .build directory..."
+    EXECUTABLE_PATH=$(find "$PROJECT_DIR/.build" -name "$APP_NAME" -type f -executable 2>/dev/null | head -n 1)
+fi
+
+if [ -z "$EXECUTABLE_PATH" ] || [ ! -f "$EXECUTABLE_PATH" ]; then
+    echo -e "${RED}❌ Error: Executable not found after build${NC}"
+    echo "Searched in:"
+    for path in "${POSSIBLE_PATHS[@]}"; do
+        echo "  - $path"
+    done
+    echo ""
+    echo "Build directory structure:"
+    ls -R "$PROJECT_DIR/.build" 2>/dev/null | head -50
+    exit 1
 fi
 
 echo -e "  ${GREEN}✅ Executable built at: $EXECUTABLE_PATH${NC}"
