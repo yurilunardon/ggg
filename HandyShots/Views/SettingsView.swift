@@ -15,6 +15,9 @@ struct SettingsView: View {
     /// Time filter in minutes (5-60 range)
     @AppStorage("timeFilter") private var timeFilter: Int = 10
 
+    /// Drag mode: copy or move files when dragging
+    @AppStorage("dragMode") private var dragMode: String = "copy"
+
     // MARK: - Body
 
     var body: some View {
@@ -32,13 +35,18 @@ struct SettingsView: View {
 
                     Divider()
 
+                    // Drag & Drop setting
+                    dragModeSection
+
+                    Divider()
+
                     // About section
                     aboutSection
                 }
                 .padding()
             }
         }
-        .frame(width: 400, height: 250)
+        .frame(width: 400, height: 350)
     }
 
     // MARK: - Header
@@ -112,6 +120,78 @@ struct SettingsView: View {
                     presetButton(minutes: 30, label: "30m")
                     presetButton(minutes: 60, label: "1h")
                 }
+            }
+        }
+    }
+
+    // MARK: - Drag Mode Section
+
+    private var dragModeSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "arrow.up.doc.fill")
+                    .foregroundColor(.purple)
+
+                Text("Drag & Drop Behavior")
+                    .font(.headline)
+            }
+
+            Text("Choose what happens when you drag screenshots")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+
+            VStack(spacing: 12) {
+                // Copy option
+                Button(action: {
+                    dragMode = "copy"
+                }) {
+                    HStack {
+                        Image(systemName: dragMode == "copy" ? "checkmark.circle.fill" : "circle")
+                            .foregroundColor(dragMode == "copy" ? .blue : .gray)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Copy")
+                                .font(.body)
+                                .fontWeight(dragMode == "copy" ? .semibold : .regular)
+
+                            Text("Create a copy of the file (original remains)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+
+                        Spacer()
+                    }
+                    .padding(12)
+                    .background(dragMode == "copy" ? Color.blue.opacity(0.1) : Color.gray.opacity(0.05))
+                    .cornerRadius(8)
+                }
+                .buttonStyle(.plain)
+
+                // Move option
+                Button(action: {
+                    dragMode = "move"
+                }) {
+                    HStack {
+                        Image(systemName: dragMode == "move" ? "checkmark.circle.fill" : "circle")
+                            .foregroundColor(dragMode == "move" ? .blue : .gray)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Move")
+                                .font(.body)
+                                .fontWeight(dragMode == "move" ? .semibold : .regular)
+
+                            Text("Move the file (remove from monitored folder)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+
+                        Spacer()
+                    }
+                    .padding(12)
+                    .background(dragMode == "move" ? Color.blue.opacity(0.1) : Color.gray.opacity(0.05))
+                    .cornerRadius(8)
+                }
+                .buttonStyle(.plain)
             }
         }
     }
