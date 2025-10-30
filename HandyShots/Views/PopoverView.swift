@@ -379,11 +379,21 @@ class ThumbnailNSView: NSView {
     var onSelect: (() -> Void)?
     var coordinator: ThumbnailViewInternal.Coordinator?
 
+    private var previewTimer: Timer?
+    private var isDragging: Bool = false
+
     private var isHovering: Bool = false {
         didSet {
             if isHovering && enableHoverZoom {
-                showPreview()
+                // Start timer to show preview after 4 seconds
+                previewTimer?.invalidate()
+                previewTimer = Timer.scheduledTimer(withTimeInterval: 4.0, repeats: false) { [weak self] _ in
+                    self?.showPreview()
+                }
             } else {
+                // Cancel timer and hide preview
+                previewTimer?.invalidate()
+                previewTimer = nil
                 HoverPreviewManager.shared.hidePreview()
             }
         }
@@ -433,22 +443,20 @@ class ThumbnailNSView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        // Check for modifier keys for selection
-        if event.modifierFlags.contains(.command) {
-            onSelect?()
-        } else {
-            // Regular click opens the screenshot
-            if let url = screenshot?.url {
-                NSWorkspace.shared.open(url)
-            }
-        }
+        // Reset drag flag
+        isDragging = false
+
+        // Cancel preview timer on mouse down
+        previewTimer?.invalidate()
+        previewTimer = nil
+        HoverPreviewManager.shared.hidePreview(animated: false)
     }
 
     override func mouseDragged(with event: NSEvent) {
         guard let screenshot = screenshot else { return }
 
-        // Hide preview during drag
-        HoverPreviewManager.shared.hidePreview(animated: false)
+        // Mark that we're dragging
+        isDragging = true
 
         // Create drag item using NSURL (conforms to NSPasteboardWriting)
         let fileURL = screenshot.url as NSURL
@@ -467,6 +475,26 @@ class ThumbnailNSView: NSView {
 
         // Start dragging session
         beginDraggingSession(with: [item], event: event, source: self)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        // Only handle click if we didn't drag
+        guard !isDragging else {
+            isDragging = false
+            return
+        }
+
+        // Check for modifier keys for selection
+        if event.modifierFlags.contains(.command) {
+            onSelect?()
+        } else {
+            // Regular click opens the screenshot
+            if let url = screenshot?.url {
+                NSWorkspace.shared.open(url)
+            }
+        }
+
+        isDragging = false
     }
 
     private func showPreview() {
