@@ -53,30 +53,43 @@ class FolderDetector {
     /// Read screenshot location from system preferences
     /// - Returns: Path from com.apple.screencapture preferences, or nil
     private static func readScreenshotPreference() -> String? {
+        print("🔍 Attempting to read screenshot location from system preferences...")
+
         // Method 1: Try using UserDefaults (most reliable)
+        print("   📍 Trying Method 1: UserDefaults...")
         if let path = UserDefaults(suiteName: "com.apple.screencapture")?.string(forKey: "location") {
-            print("✅ Found screenshot location via UserDefaults: \(path)")
+            print("   ✅ Method 1 SUCCESS: Found via UserDefaults: \(path)")
             return standardizePath(path)
+        } else {
+            print("   ❌ Method 1 FAILED: UserDefaults returned nil")
         }
 
         // Method 2: Try CFPreferences
+        print("   📍 Trying Method 2: CFPreferences...")
         let key = "location" as CFString
         let domain = "com.apple.screencapture" as CFString
 
         if let value = CFPreferencesCopyAppValue(key, domain) {
             if let path = value as? String {
-                print("✅ Found screenshot location via CFPreferences: \(path)")
+                print("   ✅ Method 2 SUCCESS: Found via CFPreferences: \(path)")
                 return standardizePath(path)
+            } else {
+                print("   ❌ Method 2 FAILED: Value exists but not a String (type: \(type(of: value)))")
             }
+        } else {
+            print("   ❌ Method 2 FAILED: CFPreferences returned nil")
         }
 
         // Method 3: Try using 'defaults read' command
+        print("   📍 Trying Method 3: defaults read command...")
         if let path = readScreenshotViaDefaults() {
-            print("✅ Found screenshot location via defaults command: \(path)")
+            print("   ✅ Method 3 SUCCESS: Found via defaults command: \(path)")
             return standardizePath(path)
+        } else {
+            print("   ❌ Method 3 FAILED: defaults command returned nil")
         }
 
-        print("⚠️ No screenshot location found in system preferences")
+        print("⚠️ All methods failed - no screenshot location found in system preferences")
         return nil
     }
 
@@ -85,27 +98,37 @@ class FolderDetector {
     private static func readScreenshotViaDefaults() -> String? {
         let task = Process()
         let pipe = Pipe()
+        let errorPipe = Pipe()
 
         task.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
         task.arguments = ["read", "com.apple.screencapture", "location"]
         task.standardOutput = pipe
-        task.standardError = Pipe()
+        task.standardError = errorPipe
 
         do {
+            print("      🔧 Executing: /usr/bin/defaults read com.apple.screencapture location")
             try task.run()
             task.waitUntilExit()
 
-            guard task.terminationStatus == 0 else {
-                return nil
-            }
+            print("      🔧 Process exit code: \(task.terminationStatus)")
 
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            if let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !output.isEmpty {
-                return output
+            if task.terminationStatus == 0 {
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                if let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !output.isEmpty {
+                    print("      🔧 Command output: \(output)")
+                    return output
+                } else {
+                    print("      🔧 Command succeeded but output is empty")
+                }
+            } else {
+                let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+                if let errorOutput = String(data: errorData, encoding: .utf8) {
+                    print("      🔧 Command error: \(errorOutput)")
+                }
             }
         } catch {
-            print("⚠️ Error reading defaults: \(error.localizedDescription)")
+            print("      🔧 Exception executing command: \(error.localizedDescription)")
         }
 
         return nil
@@ -113,7 +136,7 @@ class FolderDetector {
 
     /// Get Desktop path as fallback
     /// - Returns: Path to user's Desktop folder
-    private static func getDesktopPath() -> String {
+    static func getDesktopPath() -> String {
         let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
         let desktopPath = homeDirectory.appendingPathComponent("Desktop").path
         return desktopPath

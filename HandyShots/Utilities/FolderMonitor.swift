@@ -36,11 +36,17 @@ class FolderMonitor: ObservableObject {
     // MARK: - Initialization
 
     init() {
-        // Set initial folder
-        currentFolder = FolderDetector.getCurrentFolder()
-        lastDetectedFolder = FolderDetector.detectSystemFolder()
+        // Always detect system folder on init
+        let systemFolder = FolderDetector.detectSystemFolder() ?? FolderDetector.getDesktopPath()
+        currentFolder = systemFolder
+        lastDetectedFolder = systemFolder
 
-        print("📁 FolderMonitor initialized with folder: \(currentFolder)")
+        print("🚀 FolderMonitor initialized")
+        print("   📁 System folder detected: \(systemFolder)")
+        print("   📁 Current folder set to: \(currentFolder)")
+
+        // Save the detected system folder
+        FolderDetector.saveFolder(path: systemFolder)
     }
 
     deinit {
