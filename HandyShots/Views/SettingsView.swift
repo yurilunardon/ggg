@@ -18,6 +18,9 @@ struct SettingsView: View {
     /// Drag mode: copy or move files when dragging
     @AppStorage("dragMode") private var dragMode: String = "copy"
 
+    /// Enable hover zoom preview
+    @AppStorage("enableHoverZoom") private var enableHoverZoom: Bool = false
+
     // MARK: - Body
 
     var body: some View {
@@ -40,13 +43,18 @@ struct SettingsView: View {
 
                     Divider()
 
+                    // Hover Zoom setting
+                    hoverZoomSection
+
+                    Divider()
+
                     // About section
                     aboutSection
                 }
                 .padding()
             }
         }
-        .frame(width: 400, height: 350)
+        .frame(width: 400, height: 450)
     }
 
     // MARK: - Header
@@ -193,6 +201,45 @@ struct SettingsView: View {
                 }
                 .buttonStyle(.plain)
             }
+        }
+    }
+
+    // MARK: - Hover Zoom Section
+
+    private var hoverZoomSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(.green)
+
+                Text("Hover Zoom Preview")
+                    .font(.headline)
+            }
+
+            Text("Show enlarged preview when hovering over screenshots")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+
+            Toggle(isOn: $enableHoverZoom) {
+                HStack {
+                    Image(systemName: enableHoverZoom ? "eye.fill" : "eye.slash.fill")
+                        .foregroundColor(enableHoverZoom ? .green : .gray)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(enableHoverZoom ? "Enabled" : "Disabled")
+                            .font(.body)
+                            .fontWeight(.semibold)
+
+                        Text(enableHoverZoom ? "Preview appears on hover" : "No preview on hover")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            .toggleStyle(.switch)
+            .padding(12)
+            .background(enableHoverZoom ? Color.green.opacity(0.1) : Color.gray.opacity(0.05))
+            .cornerRadius(8)
         }
     }
 

@@ -47,6 +47,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setupMenuBarIcon()
         setupPopover()
         startFolderMonitoring()
+        setupAutoCloseObserver()
+    }
+
+    /// Setup observer to auto-close popover when app loses focus
+    private func setupAutoCloseObserver() {
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            if self?.popover.isShown == true {
+                self?.popover.performClose(nil)
+            }
+        }
     }
 
     // MARK: - Setup Methods
@@ -160,7 +174,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             settingsWindow = NSWindow(contentViewController: hostingController)
             settingsWindow?.title = "HandyShots Settings"
             settingsWindow?.styleMask = [.titled, .closable]
-            settingsWindow?.setContentSize(NSSize(width: 400, height: 250))
+            settingsWindow?.setContentSize(NSSize(width: 400, height: 450))
             settingsWindow?.center()
 
             // Clean up window reference when closed
