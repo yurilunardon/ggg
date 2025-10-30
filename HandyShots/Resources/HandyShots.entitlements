@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Enable App Sandbox -->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+
+	<!-- File Access Permissions -->
+	<!-- User Selected File (Read Only) -->
+	<key>com.apple.security.files.user-selected.read-only</key>
+	<true/>
+
+	<!-- Network Access -->
+	<!-- Outgoing Connections (for future features) -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+
+	<!-- System Preferences Access -->
+	<!-- Allow reading screenshot location preference -->
+	<key>com.apple.security.temporary-exception.apple-events</key>
+	<array>
+		<string>com.apple.systempreferences</string>
+	</array>
+</dict>
+</plist>

@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Bundle Information -->
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.handyshots.app</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>HandyShots</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+
+	<!-- Minimum macOS Version -->
+	<key>LSMinimumSystemVersion</key>
+	<string>13.0</string>
+
+	<!-- UI Configuration -->
+	<key>LSUIElement</key>
+	<true/>
+	<!-- This makes the app a menu bar only app (no dock icon) -->
+
+	<!-- App Category -->
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.productivity</string>
+
+	<!-- Copyright -->
+	<key>NSHumanReadableCopyright</key>
+	<string>Copyright © 2025 HandyShots. All rights reserved.</string>
+
+	<!-- High Resolution Support -->
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+
+	<!-- Privacy Permissions Messages -->
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>HandyShots needs access to your Desktop folder to monitor screenshots.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>HandyShots needs access to your Documents folder to monitor screenshots.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>HandyShots needs access to your Downloads folder to monitor screenshots.</string>
+
+	<!-- App Sandbox -->
+	<!-- Note: Sandbox settings are typically in .entitlements file -->
+
+	<!-- Supported Platforms -->
+	<key>CFBundleSupportedPlatforms</key>
+	<array>
+		<string>MacOSX</string>
+	</array>
+
+	<!-- Launch Configuration -->
+	<key>NSSupportsAutomaticTermination</key>
+	<false/>
+	<key>NSSupportsSuddenTermination</key>
+	<false/>
+</dict>
+</plist>
