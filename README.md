@@ -40,9 +40,32 @@ HandyShots/
     └── HandyShots.entitlements  # Sandbox capabilities
 ```
 
-## 🚀 Setup e Build
+## 🚀 Quick Start - Build Automatico (CONSIGLIATO)
 
-### Opzione 1: Xcode (Consigliato)
+**Modo più semplice per compilare e lanciare l'app:**
+
+```bash
+# Dalla root del progetto
+./scripts/fresh-build.sh
+```
+
+Questo script fa TUTTO automaticamente:
+1. ✅ Pulisce tutte le build precedenti
+2. ✅ Rimuove app installate
+3. ✅ Resetta UserDefaults e permessi
+4. ✅ Compila da zero in Release mode
+5. ✅ Crea un .app bundle standalone pronto all'uso
+6. ✅ Ti chiede se vuoi lanciare l'app immediatamente
+
+**Risultato:** Troverai l'app in `build/HandyShots.app` pronta per essere aperta!
+
+**Per maggiori dettagli:** Vedi [scripts/README.md](scripts/README.md)
+
+---
+
+## 🚀 Setup e Build Manuale
+
+### Opzione 1: Xcode (Alternativa manuale)
 
 1. **Apri Xcode** e crea un nuovo progetto:
    - File → New → Project
@@ -86,6 +109,25 @@ swift build -c release
 # Note: SPM non supporta completamente le app macOS con UI
 # Questa opzione è principalmente per test di compilazione
 ```
+
+---
+
+## 🛠️ Script Disponibili
+
+Il progetto include script automatici per semplificare il workflow:
+
+### `./scripts/fresh-build.sh` ⭐ PRINCIPALE
+Build completo da zero con cleanup totale.
+
+### `./scripts/clean.sh`
+Pulisce build, cache, UserDefaults e permessi.
+
+### `./scripts/build.sh`
+Compila l'app senza cleanup.
+
+**Documentazione completa:** [scripts/README.md](scripts/README.md)
+
+---
 
 ## 🎯 Come Usare
 
