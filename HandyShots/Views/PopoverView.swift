@@ -186,18 +186,10 @@ struct PopoverView: View {
                             isSelected: selectedScreenshots.contains(screenshot.id),
                             allScreenshots: screenshots,
                             selectedIDs: selectedScreenshots,
+                            enableHoverZoom: enableHoverZoom,
                             onSelect: {
                                 if !isDragSelecting {
                                     toggleSelection(screenshot: screenshot)
-                                }
-                            },
-                            onHover: { isHovering in
-                                if enableHoverZoom {
-                                    if isHovering {
-                                        HoverPreviewManager.shared.showPreview(for: screenshot)
-                                    } else {
-                                        HoverPreviewManager.shared.hidePreview()
-                                    }
                                 }
                             }
                         )
@@ -330,10 +322,11 @@ struct ScreenshotThumbnailView: View {
     let isSelected: Bool
     let allScreenshots: [Screenshot]
     let selectedIDs: Set<String>
+    let enableHoverZoom: Bool
     let onSelect: () -> Void
-    let onHover: (Bool) -> Void
 
     @AppStorage("dragMode") private var dragMode: String = "copy" // "copy" or "move"
+    @State private var isHovering: Bool = false
 
     var body: some View {
         VStack(spacing: 4) {
@@ -380,6 +373,19 @@ struct ScreenshotThumbnailView: View {
                 .font(.caption2)
                 .foregroundColor(.secondary)
         }
+        .background(
+            GeometryReader { geometry in
+                Color.clear.preference(
+                    key: FramePreferenceKey.self,
+                    value: geometry.frame(in: .global)
+                )
+            }
+        )
+        .onPreferenceChange(FramePreferenceKey.self) { frame in
+            if isHovering && enableHoverZoom {
+                HoverPreviewManager.shared.showPreview(for: screenshot, over: frame)
+            }
+        }
         .onTapGesture {
             onSelect()
         }
@@ -388,52 +394,19 @@ struct ScreenshotThumbnailView: View {
             NSWorkspace.shared.open(screenshot.url)
         }
         .onHover { hovering in
-            onHover(hovering)
+            isHovering = hovering
+            if !hovering {
+                HoverPreviewManager.shared.hidePreview()
+            }
         }
         .onDrag {
-            // Drag & drop functionality - support multiple files
-            let selectedScreenshots = allScreenshots.filter { selectedIDs.contains($0.id) }
+            // Hide preview during drag
+            HoverPreviewManager.shared.hidePreview(animated: false)
 
-            // If this screenshot is selected, drag all selected ones
-            // Otherwise, drag just this one
-            let screenshotsToDrag = isSelected && !selectedScreenshots.isEmpty ? selectedScreenshots : [screenshot]
-
-            if screenshotsToDrag.count == 1 {
-                // Single file drag
-                let provider = NSItemProvider(contentsOf: screenshotsToDrag[0].url)!
-                provider.suggestedName = screenshotsToDrag[0].name
-                return provider
-            } else {
-                // Multiple files drag - create a compound provider
-                let provider = NSItemProvider()
-
-                // Register all file URLs
-                for screenshot in screenshotsToDrag {
-                    let fileProvider = NSItemProvider(contentsOf: screenshot.url)!
-                    // Note: Multiple file drag requires more complex implementation
-                    // For now, we'll drag the first selected file with a count indicator
-                }
-
-                provider.suggestedName = "\(screenshotsToDrag.count) screenshots"
-
-                // Register file promise for multiple files
-                provider.registerFileRepresentation(
-                    forTypeIdentifier: "public.file-url",
-                    fileOptions: [],
-                    visibility: .all
-                ) { completion in
-                    // For multiple files, we need to create a temporary directory or handle differently
-                    // For now, return the first file
-                    if let firstURL = screenshotsToDrag.first?.url {
-                        completion(firstURL, false, nil)
-                    } else {
-                        completion(nil, false, NSError(domain: "HandyShots", code: -1))
-                    }
-                    return nil
-                }
-
-                return provider
-            }
+            // Drag & drop functionality
+            // TODO: Multi-file drag needs custom NSView implementation
+            // For now, drag single file
+            return NSItemProvider(contentsOf: screenshot.url) ?? NSItemProvider()
         }
     }
 
@@ -449,6 +422,15 @@ struct ScreenshotThumbnailView: View {
         } else {
             return "\(hours)h"
         }
+    }
+}
+
+// MARK: - Preference Key for Frame
+
+struct FramePreferenceKey: PreferenceKey {
+    static var defaultValue: CGRect = .zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        value = nextValue()
     }
 }
 

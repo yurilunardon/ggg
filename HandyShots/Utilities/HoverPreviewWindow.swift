@@ -18,16 +18,16 @@ class HoverPreviewManager {
 
     private init() {}
 
-    /// Show preview for a screenshot near the cursor
-    func showPreview(for screenshot: Screenshot, at cursorLocation: NSPoint? = nil) {
+    /// Show preview for a screenshot over the thumbnail
+    func showPreview(for screenshot: Screenshot, over thumbnailFrame: NSRect) {
         // Hide any existing preview
         hidePreview()
 
         guard let image = screenshot.thumbnail else { return }
 
-        // Calculate preview size (max 250x250, maintaining aspect ratio)
+        // Calculate preview size (max 400x400, maintaining aspect ratio)
         let imageSize = image.size
-        let maxSize: CGFloat = 250
+        let maxSize: CGFloat = 400
         var previewSize = imageSize
 
         if imageSize.width > maxSize || imageSize.height > maxSize {
@@ -35,13 +35,10 @@ class HoverPreviewManager {
             previewSize = NSSize(width: imageSize.width * scale, height: imageSize.height * scale)
         }
 
-        // Get cursor position
-        let mouseLocation = cursorLocation ?? NSEvent.mouseLocation
-
-        // Position window near cursor (offset to avoid covering thumbnail)
+        // Center preview over the thumbnail
         let windowOrigin = NSPoint(
-            x: mouseLocation.x + 20,
-            y: mouseLocation.y - previewSize.height - 20
+            x: thumbnailFrame.midX - previewSize.width / 2,
+            y: thumbnailFrame.midY - previewSize.height / 2
         )
 
         // Create preview window
@@ -60,7 +57,7 @@ class HoverPreviewManager {
         window.level = .popUpMenu
         window.hasShadow = true
         window.contentView = contentView
-        window.ignoresMouseEvents = true
+        window.ignoresMouseEvents = true // Ignore mouse events so drag works
         window.animationBehavior = .none
 
         // Show with fade animation
