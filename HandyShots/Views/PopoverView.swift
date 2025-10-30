@@ -326,88 +326,236 @@ struct ScreenshotThumbnailView: View {
     let onSelect: () -> Void
 
     @AppStorage("dragMode") private var dragMode: String = "copy" // "copy" or "move"
-    @State private var isHovering: Bool = false
 
     var body: some View {
-        VStack(spacing: 4) {
-            // Thumbnail image
-            if let thumbnail = screenshot.thumbnail {
-                Image(nsImage: thumbnail)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: 80, height: 80)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(isSelected ? Color.blue : Color.gray.opacity(0.2), lineWidth: isSelected ? 3 : 1)
-                    )
-                    .overlay(
-                        // Selection indicator
-                        Group {
-                            if isSelected {
-                                VStack {
-                                    HStack {
-                                        Spacer()
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .foregroundColor(.blue)
-                                            .background(Circle().fill(Color.white).padding(2))
-                                            .padding(4)
-                                    }
-                                    Spacer()
-                                }
-                            }
-                        }
-                    )
-            } else {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.gray.opacity(0.2))
-                    .frame(width: 80, height: 80)
-                    .overlay(
-                        Image(systemName: "photo")
-                            .foregroundColor(.gray)
-                    )
-            }
-
-            // Time ago text
-            Text(timeAgo(from: screenshot.createdDate))
-                .font(.caption2)
-                .foregroundColor(.secondary)
-        }
-        .background(
-            GeometryReader { geometry in
-                Color.clear.preference(
-                    key: FramePreferenceKey.self,
-                    value: geometry.frame(in: .global)
-                )
-            }
+        ThumbnailViewInternal(
+            screenshot: screenshot,
+            isSelected: isSelected,
+            enableHoverZoom: enableHoverZoom,
+            onSelect: onSelect
         )
-        .onPreferenceChange(FramePreferenceKey.self) { frame in
-            if isHovering && enableHoverZoom {
-                HoverPreviewManager.shared.showPreview(for: screenshot, over: frame)
-            }
-        }
-        .onTapGesture {
-            onSelect()
-        }
-        .onLongPressGesture(minimumDuration: 0.1) {
-            // Open on long press
-            NSWorkspace.shared.open(screenshot.url)
-        }
-        .onHover { hovering in
-            isHovering = hovering
-            if !hovering {
+        .frame(width: 80, height: 100)
+    }
+
+}
+
+// MARK: - Thumbnail View Internal
+
+struct ThumbnailViewInternal: NSViewRepresentable {
+    let screenshot: Screenshot
+    let isSelected: Bool
+    let enableHoverZoom: Bool
+    let onSelect: () -> Void
+
+    func makeNSView(context: Context) -> ThumbnailNSView {
+        let view = ThumbnailNSView()
+        view.coordinator = context.coordinator
+        return view
+    }
+
+    func updateNSView(_ nsView: ThumbnailNSView, context: Context) {
+        nsView.screenshot = screenshot
+        nsView.isSelected = isSelected
+        nsView.enableHoverZoom = enableHoverZoom
+        nsView.onSelect = onSelect
+        nsView.needsDisplay = true
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    class Coordinator {
+        var trackingArea: NSTrackingArea?
+    }
+}
+
+// MARK: - Thumbnail NSView
+
+class ThumbnailNSView: NSView {
+    var screenshot: Screenshot?
+    var isSelected: Bool = false
+    var enableHoverZoom: Bool = false
+    var onSelect: (() -> Void)?
+    var coordinator: ThumbnailViewInternal.Coordinator?
+
+    private var isHovering: Bool = false {
+        didSet {
+            if isHovering && enableHoverZoom, let screenshot = screenshot {
+                showPreview()
+            } else {
                 HoverPreviewManager.shared.hidePreview()
             }
         }
-        .onDrag {
-            // Hide preview during drag
-            HoverPreviewManager.shared.hidePreview(animated: false)
+    }
 
-            // Drag & drop functionality
-            // TODO: Multi-file drag needs custom NSView implementation
-            // For now, drag single file
-            return NSItemProvider(contentsOf: screenshot.url) ?? NSItemProvider()
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setupView()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setupView()
+    }
+
+    private func setupView() {
+        // Register for drag & drop
+        registerForDraggedTypes([.fileURL])
+
+        // Setup tracking area for hover
+        updateTrackingAreas()
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+
+        if let existing = coordinator?.trackingArea {
+            removeTrackingArea(existing)
         }
+
+        let trackingArea = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeInKeyWindow],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(trackingArea)
+        coordinator?.trackingArea = trackingArea
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isHovering = true
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isHovering = false
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        // Check for modifier keys for selection
+        if event.modifierFlags.contains(.command) {
+            onSelect?()
+        } else {
+            // Regular click opens the screenshot
+            if let url = screenshot?.url {
+                NSWorkspace.shared.open(url)
+            }
+        }
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let screenshot = screenshot else { return }
+
+        // Hide preview during drag
+        HoverPreviewManager.shared.hidePreview(animated: false)
+
+        // Create drag item
+        let provider = NSItemProvider(contentsOf: screenshot.url)!
+        let item = NSDraggingItem(pasteboardWriter: provider)
+
+        // Set drag image
+        if let thumbnail = screenshot.thumbnail {
+            let dragImage = thumbnail
+            let draggingFrame = NSRect(
+                x: 0, y: 0,
+                width: dragImage.size.width,
+                height: dragImage.size.height
+            )
+            item.setDraggingFrame(draggingFrame, contents: dragImage)
+        }
+
+        // Start dragging session
+        beginDraggingSession(with: [item], event: event, source: self)
+    }
+
+    private func showPreview() {
+        guard let screenshot = screenshot else { return }
+
+        // Get the image rect in window coordinates
+        let imageRect = NSRect(x: 0, y: 20, width: 80, height: 80)
+        let imageRectInWindow = convert(imageRect, to: nil)
+
+        // Convert to screen coordinates
+        let frameInScreen = window?.convertToScreen(imageRectInWindow) ?? .zero
+        HoverPreviewManager.shared.showPreview(for: screenshot, over: frameInScreen)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+
+        guard let screenshot = screenshot else { return }
+
+        // Image area: 80x80 at top, text area: 20px at bottom
+        let imageRect = NSRect(x: 0, y: 20, width: 80, height: 80)
+        let textRect = NSRect(x: 0, y: 0, width: 80, height: 20)
+
+        // Draw thumbnail
+        if let thumbnail = screenshot.thumbnail {
+            // Save graphics state
+            NSGraphicsContext.current?.saveGraphicsState()
+
+            // Create rounded rect path for clipping
+            let clipPath = NSBezierPath(roundedRect: imageRect, xRadius: 8, yRadius: 8)
+            clipPath.addClip()
+
+            // Draw image
+            thumbnail.draw(in: imageRect)
+
+            // Restore graphics state
+            NSGraphicsContext.current?.restoreGraphicsState()
+
+            // Draw border
+            if isSelected {
+                NSColor.systemBlue.setStroke()
+                let borderPath = NSBezierPath(roundedRect: imageRect, xRadius: 8, yRadius: 8)
+                borderPath.lineWidth = 3
+                borderPath.stroke()
+
+                // Draw checkmark
+                let checkmarkSize: CGFloat = 16
+                let checkmarkRect = NSRect(
+                    x: imageRect.maxX - checkmarkSize - 4,
+                    y: imageRect.maxY - checkmarkSize - 4,
+                    width: checkmarkSize,
+                    height: checkmarkSize
+                )
+
+                // Draw white circle background
+                NSColor.white.setFill()
+                let circlePath = NSBezierPath(ovalIn: checkmarkRect.insetBy(dx: -2, dy: -2))
+                circlePath.fill()
+
+                // Draw checkmark icon
+                let checkImage = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: nil)
+                checkImage?.isTemplate = true
+
+                NSGraphicsContext.current?.saveGraphicsState()
+                NSColor.systemBlue.set()
+                checkImage?.draw(in: checkmarkRect)
+                NSGraphicsContext.current?.restoreGraphicsState()
+            } else {
+                NSColor.gray.withAlphaComponent(0.2).setStroke()
+                let borderPath = NSBezierPath(roundedRect: imageRect, xRadius: 8, yRadius: 8)
+                borderPath.lineWidth = 1
+                borderPath.stroke()
+            }
+        }
+
+        // Draw time ago text
+        let timeText = timeAgo(from: screenshot.createdDate)
+        let textAttributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 10),
+            .foregroundColor: NSColor.secondaryLabelColor
+        ]
+        let textSize = (timeText as NSString).size(withAttributes: textAttributes)
+        let centeredTextRect = NSRect(
+            x: (textRect.width - textSize.width) / 2,
+            y: textRect.minY + (textRect.height - textSize.height) / 2,
+            width: textSize.width,
+            height: textSize.height
+        )
+        (timeText as NSString).draw(in: centeredTextRect, withAttributes: textAttributes)
     }
 
     private func timeAgo(from date: Date) -> String {
@@ -425,12 +573,9 @@ struct ScreenshotThumbnailView: View {
     }
 }
 
-// MARK: - Preference Key for Frame
-
-struct FramePreferenceKey: PreferenceKey {
-    static var defaultValue: CGRect = .zero
-    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
-        value = nextValue()
+extension ThumbnailNSView: NSDraggingSource {
+    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+        return [.copy, .move]
     }
 }
 
