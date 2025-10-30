@@ -11,6 +11,11 @@ import AppKit
 
 /// Main popover interface shown when clicking menu bar icon
 struct PopoverView: View {
+    // MARK: - Environment Objects
+
+    /// Folder monitor for tracking screenshot folder changes
+    @EnvironmentObject var folderMonitor: FolderMonitor
+
     // MARK: - AppStorage Properties
 
     /// Flag indicating if this is the first launch
@@ -20,9 +25,6 @@ struct PopoverView: View {
     @AppStorage("screenshotFolder") private var screenshotFolder: String = ""
 
     // MARK: - State Properties
-
-    /// Current folder path (synced with AppStorage)
-    @State private var currentFolder: String = ""
 
     /// Show splash screen on first open
     @State private var showSplash: Bool = true
@@ -39,7 +41,7 @@ struct PopoverView: View {
             } else if isFirstLaunch {
                 // Show welcome screen on first launch
                 WelcomeView(onFolderSelected: { path in
-                    currentFolder = path
+                    folderMonitor.updateFolder(path: path)
                     screenshotFolder = path
                 })
             } else {
@@ -48,12 +50,6 @@ struct PopoverView: View {
             }
         }
         .frame(width: 400, height: 300)
-        .onAppear {
-            // Initialize current folder
-            if currentFolder.isEmpty {
-                currentFolder = FolderDetector.getCurrentFolder()
-            }
-        }
     }
 
     // MARK: - Main Interface
@@ -136,11 +132,11 @@ struct PopoverView: View {
                     .foregroundColor(.blue)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(FolderDetector.getFolderDisplayName(path: currentFolder))
+                    Text(FolderDetector.getFolderDisplayName(path: folderMonitor.currentFolder))
                         .font(.callout)
                         .fontWeight(.medium)
 
-                    Text(currentFolder)
+                    Text(folderMonitor.currentFolder)
                         .font(.caption2)
                         .foregroundColor(.secondary)
                         .lineLimit(1)
@@ -225,7 +221,7 @@ struct PopoverView: View {
 
     /// Check if current folder exists and is accessible
     private var folderExists: Bool {
-        FolderDetector.isFolderAccessible(path: currentFolder)
+        FolderDetector.isFolderAccessible(path: folderMonitor.currentFolder)
     }
 
     // MARK: - Actions
@@ -241,16 +237,15 @@ struct PopoverView: View {
         panel.canCreateDirectories = false
 
         // Set initial directory
-        if !currentFolder.isEmpty, let url = URL(string: "file://\(currentFolder)") {
+        if !folderMonitor.currentFolder.isEmpty, let url = URL(string: "file://\(folderMonitor.currentFolder)") {
             panel.directoryURL = url
         }
 
         // Show panel
-        panel.begin { response in
+        panel.begin { [weak folderMonitor] response in
             if response == .OK, let url = panel.url {
                 let path = url.path
-                currentFolder = path
-                screenshotFolder = path
+                folderMonitor?.updateFolder(path: path)
                 FolderDetector.saveFolder(path: path)
 
                 print("✅ Screenshot folder changed to: \(path)")
@@ -263,10 +258,12 @@ struct PopoverView: View {
 
 #Preview("First Launch") {
     PopoverView()
+        .environmentObject(FolderMonitor())
 }
 
 #Preview("Main Interface") {
     PopoverView()
+        .environmentObject(FolderMonitor())
         .onAppear {
             UserDefaults.standard.set(false, forKey: "isFirstLaunch")
             UserDefaults.standard.set("/Users/user/Desktop", forKey: "screenshotFolder")

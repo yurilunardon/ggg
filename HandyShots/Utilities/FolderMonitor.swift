@@ -8,6 +8,7 @@
 
 import Foundation
 import Combine
+import AppKit
 
 /// Monitors screenshot folder location changes via polling
 class FolderMonitor: ObservableObject {
@@ -105,25 +106,53 @@ class FolderMonitor: ObservableObject {
 
     /// Check if system screenshot folder has changed
     private func checkForFolderChange() {
+        print("🔍 Checking for folder changes...")
+
         // Detect current system folder
         guard let systemFolder = FolderDetector.detectSystemFolder() else {
+            print("⚠️ Unable to detect system screenshot folder")
             return
         }
 
+        print("📁 System folder detected: \(systemFolder)")
+        print("📁 Last known folder: \(lastDetectedFolder ?? "nil")")
+
         // Check if system folder has changed
         if systemFolder != lastDetectedFolder {
-            print("🔄 System screenshot folder changed: \(lastDetectedFolder ?? "nil") → \(systemFolder)")
+            print("🔄 System screenshot folder changed!")
+            print("   From: \(lastDetectedFolder ?? "nil")")
+            print("   To: \(systemFolder)")
 
             lastDetectedFolder = systemFolder
 
-            // Update current folder if user hasn't manually selected one
-            let userFolder = UserDefaults.standard.string(forKey: "screenshotFolder")
-            if userFolder == nil || userFolder?.isEmpty == true {
-                updateFolder(path: systemFolder)
+            // Always update current folder to match system
+            updateFolder(path: systemFolder)
+
+            // Show notification to user
+            showFolderChangeNotification(newFolder: systemFolder)
+        } else {
+            print("✅ No folder change detected")
+        }
+    }
+
+    /// Show a notification when screenshot folder changes
+    /// - Parameter newFolder: The new folder path
+    private func showFolderChangeNotification(newFolder: String) {
+        DispatchQueue.main.async {
+            let alert = NSAlert()
+            alert.messageText = "Screenshot Folder Changed"
+            alert.informativeText = "The system screenshot folder has been updated to:\n\n\(newFolder)"
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: "OK")
+
+            // Show as floating alert
+            if let window = NSApp.windows.first {
+                alert.beginSheetModal(for: window)
             } else {
-                // Notify that system folder changed but we're keeping user selection
-                print("ℹ️ System folder changed but keeping user selection: \(currentFolder)")
+                alert.runModal()
             }
+
+            print("✅ Notification shown to user about folder change")
         }
     }
 }
