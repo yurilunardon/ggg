@@ -38,6 +38,12 @@ struct PopoverView: View {
     /// Timer for refreshing screenshots
     @State private var refreshTimer: Timer?
 
+    /// Currently hovered screenshot for zoom preview
+    @State private var hoveredScreenshot: Screenshot?
+
+    /// Selected screenshots for drag & drop
+    @State private var selectedScreenshots: Set<String> = []
+
     // MARK: - Body
 
     var body: some View {
@@ -108,17 +114,19 @@ struct PopoverView: View {
                 Circle()
                     .fill(folderExists ? Color.green : Color.red)
                     .frame(width: 6, height: 6)
+                    .help(folderExists ? "Cartella accessibile" : "Cartella non accessibile")
             }
 
             // Monitored folder row
             HStack(spacing: 8) {
-                Image(systemName: "folder.fill")
-                    .font(.caption)
-                    .foregroundColor(.blue)
-
-                Text(FolderDetector.getFolderDisplayName(path: folderMonitor.currentFolder))
-                    .font(.caption)
+                Text("Cartella monitorata:")
+                    .font(.caption2)
                     .foregroundColor(.secondary)
+                    .fontWeight(.medium)
+
+                Text(folderMonitor.currentFolder)
+                    .font(.caption2)
+                    .foregroundColor(.blue)
                     .lineLimit(1)
                     .truncationMode(.middle)
 
@@ -164,14 +172,29 @@ struct PopoverView: View {
                 .padding()
             } else {
                 // Grid of screenshots
-                LazyVGrid(columns: [
-                    GridItem(.adaptive(minimum: 80), spacing: 8)
-                ], spacing: 8) {
-                    ForEach(screenshots) { screenshot in
-                        ScreenshotThumbnailView(screenshot: screenshot)
+                ZStack {
+                    LazyVGrid(columns: [
+                        GridItem(.adaptive(minimum: 80), spacing: 8)
+                    ], spacing: 8) {
+                        ForEach(screenshots) { screenshot in
+                            ScreenshotThumbnailView(
+                                screenshot: screenshot,
+                                isSelected: selectedScreenshots.contains(screenshot.id),
+                                onSelect: { toggleSelection(screenshot: screenshot) },
+                                onHover: { isHovering in
+                                    hoveredScreenshot = isHovering ? screenshot : nil
+                                }
+                            )
+                        }
+                    }
+                    .padding(12)
+
+                    // Hover zoom preview
+                    if let hovered = hoveredScreenshot,
+                       let image = hovered.thumbnail {
+                        ZoomPreviewView(screenshot: hovered, image: image)
                     }
                 }
-                .padding(12)
             }
         }
     }
@@ -225,6 +248,15 @@ struct PopoverView: View {
 
     // MARK: - Actions
 
+    /// Toggle screenshot selection
+    private func toggleSelection(screenshot: Screenshot) {
+        if selectedScreenshots.contains(screenshot.id) {
+            selectedScreenshots.remove(screenshot.id)
+        } else {
+            selectedScreenshots.insert(screenshot.id)
+        }
+    }
+
     /// Open folder picker to change screenshot folder
     private func changeFolderAction() {
         let panel = NSOpenPanel()
@@ -268,9 +300,9 @@ struct PopoverView: View {
         }
     }
 
-    /// Start timer to refresh screenshots periodically
+    /// Start timer to refresh screenshots periodically (instant refresh every 0.5s)
     private func startRefreshTimer() {
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { _ in
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
             refreshScreenshots()
         }
     }
@@ -286,6 +318,11 @@ struct PopoverView: View {
 
 struct ScreenshotThumbnailView: View {
     let screenshot: Screenshot
+    let isSelected: Bool
+    let onSelect: () -> Void
+    let onHover: (Bool) -> Void
+
+    @AppStorage("dragMode") private var dragMode: String = "copy" // "copy" or "move"
 
     var body: some View {
         VStack(spacing: 4) {
@@ -298,7 +335,24 @@ struct ScreenshotThumbnailView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                     .overlay(
                         RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                            .stroke(isSelected ? Color.blue : Color.gray.opacity(0.2), lineWidth: isSelected ? 3 : 1)
+                    )
+                    .overlay(
+                        // Selection indicator
+                        Group {
+                            if isSelected {
+                                VStack {
+                                    HStack {
+                                        Spacer()
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundColor(.blue)
+                                            .background(Circle().fill(Color.white).padding(2))
+                                            .padding(4)
+                                    }
+                                    Spacer()
+                                }
+                            }
+                        }
                     )
             } else {
                 RoundedRectangle(cornerRadius: 8)
@@ -316,8 +370,20 @@ struct ScreenshotThumbnailView: View {
                 .foregroundColor(.secondary)
         }
         .onTapGesture {
-            // Open in Quick Look or Finder
+            onSelect()
+        }
+        .onLongPressGesture(minimumDuration: 0.1) {
+            // Open on long press
             NSWorkspace.shared.open(screenshot.url)
+        }
+        .onHover { hovering in
+            onHover(hovering)
+        }
+        .onDrag {
+            // Drag & drop functionality
+            let provider = NSItemProvider(contentsOf: screenshot.url)!
+            provider.suggestedName = screenshot.name
+            return provider
         }
     }
 
@@ -327,12 +393,41 @@ struct ScreenshotThumbnailView: View {
         let hours = minutes / 60
 
         if seconds < 60 {
-            return "just now"
+            return "ora"
         } else if minutes < 60 {
-            return "\(minutes)m ago"
+            return "\(minutes)m fa"
         } else {
-            return "\(hours)h ago"
+            return "\(hours)h fa"
         }
+    }
+}
+
+// MARK: - Zoom Preview View
+
+struct ZoomPreviewView: View {
+    let screenshot: Screenshot
+    let image: NSImage
+
+    var body: some View {
+        VStack {
+            Spacer()
+
+            // Zoomed preview
+            Image(nsImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(maxWidth: 300, maxHeight: 200)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .shadow(color: .black.opacity(0.3), radius: 20, x: 0, y: 10)
+                .padding()
+
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black.opacity(0.001)) // Invisible but interactive
+        .allowsHitTesting(false) // Don't block interactions
+        .transition(.opacity.combined(with: .scale(scale: 0.9)))
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: screenshot.id)
     }
 }
 
