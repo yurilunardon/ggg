@@ -25,9 +25,9 @@ class HoverPreviewManager {
 
         guard let image = screenshot.thumbnail else { return }
 
-        // Calculate preview size (max 400x400, maintaining aspect ratio)
+        // Calculate preview size (max 600x600, maintaining aspect ratio)
         let imageSize = image.size
-        let maxSize: CGFloat = 400
+        let maxSize: CGFloat = 600
         var previewSize = imageSize
 
         if imageSize.width > maxSize || imageSize.height > maxSize {
