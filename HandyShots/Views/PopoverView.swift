@@ -41,9 +41,6 @@ struct PopoverView: View {
     /// Timer for refreshing screenshots
     @State private var refreshTimer: Timer?
 
-    /// Currently hovered screenshot for zoom preview
-    @State private var hoveredScreenshot: Screenshot?
-
     /// Selected screenshots for drag & drop
     @State private var selectedScreenshots: Set<String> = []
 
@@ -98,6 +95,7 @@ struct PopoverView: View {
         }
         .onDisappear {
             stopRefreshTimer()
+            HoverPreviewManager.shared.hidePreview(animated: false)
         }
     }
 
@@ -179,38 +177,33 @@ struct PopoverView: View {
                 .padding()
             } else {
                 // Grid of screenshots
-                ZStack {
-                    LazyVGrid(columns: [
-                        GridItem(.adaptive(minimum: 80), spacing: 8)
-                    ], spacing: 8) {
-                        ForEach(screenshots) { screenshot in
-                            ScreenshotThumbnailView(
-                                screenshot: screenshot,
-                                isSelected: selectedScreenshots.contains(screenshot.id),
-                                allScreenshots: screenshots,
-                                selectedIDs: selectedScreenshots,
-                                onSelect: {
-                                    if !isDragSelecting {
-                                        toggleSelection(screenshot: screenshot)
-                                    }
-                                },
-                                onHover: { isHovering in
-                                    if enableHoverZoom {
-                                        hoveredScreenshot = isHovering ? screenshot : nil
+                LazyVGrid(columns: [
+                    GridItem(.adaptive(minimum: 80), spacing: 8)
+                ], spacing: 8) {
+                    ForEach(screenshots) { screenshot in
+                        ScreenshotThumbnailView(
+                            screenshot: screenshot,
+                            isSelected: selectedScreenshots.contains(screenshot.id),
+                            allScreenshots: screenshots,
+                            selectedIDs: selectedScreenshots,
+                            onSelect: {
+                                if !isDragSelecting {
+                                    toggleSelection(screenshot: screenshot)
+                                }
+                            },
+                            onHover: { isHovering in
+                                if enableHoverZoom {
+                                    if isHovering {
+                                        HoverPreviewManager.shared.showPreview(for: screenshot)
+                                    } else {
+                                        HoverPreviewManager.shared.hidePreview()
                                     }
                                 }
-                            )
-                        }
-                    }
-                    .padding(12)
-
-                    // Hover zoom preview (if enabled)
-                    if enableHoverZoom,
-                       let hovered = hoveredScreenshot,
-                       let image = hovered.thumbnail {
-                        ZoomPreviewView(screenshot: hovered, image: image)
+                            }
+                        )
                     }
                 }
+                .padding(12)
             }
         }
     }
@@ -456,35 +449,6 @@ struct ScreenshotThumbnailView: View {
         } else {
             return "\(hours)h"
         }
-    }
-}
-
-// MARK: - Zoom Preview View
-
-struct ZoomPreviewView: View {
-    let screenshot: Screenshot
-    let image: NSImage
-
-    var body: some View {
-        VStack {
-            Spacer()
-
-            // Zoomed preview
-            Image(nsImage: image)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(maxWidth: 300, maxHeight: 200)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .shadow(color: .black.opacity(0.3), radius: 20, x: 0, y: 10)
-                .padding()
-
-            Spacer()
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black.opacity(0.001)) // Invisible but interactive
-        .allowsHitTesting(false) // Don't block interactions
-        .transition(.opacity.combined(with: .scale(scale: 0.9)))
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: screenshot.id)
     }
 }
 
