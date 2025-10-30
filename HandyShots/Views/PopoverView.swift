@@ -381,7 +381,7 @@ class ThumbnailNSView: NSView {
 
     private var isHovering: Bool = false {
         didSet {
-            if isHovering && enableHoverZoom, let screenshot = screenshot {
+            if isHovering && enableHoverZoom {
                 showPreview()
             } else {
                 HoverPreviewManager.shared.hidePreview()
@@ -450,9 +450,9 @@ class ThumbnailNSView: NSView {
         // Hide preview during drag
         HoverPreviewManager.shared.hidePreview(animated: false)
 
-        // Create drag item
-        let provider = NSItemProvider(contentsOf: screenshot.url)!
-        let item = NSDraggingItem(pasteboardWriter: provider)
+        // Create drag item using NSURL (conforms to NSPasteboardWriting)
+        let fileURL = screenshot.url as NSURL
+        let item = NSDraggingItem(pasteboardWriter: fileURL)
 
         // Set drag image
         if let thumbnail = screenshot.thumbnail {
