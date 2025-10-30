@@ -21,8 +21,9 @@ let package = Package(
         .executableTarget(
             name: "HandyShots",
             path: "HandyShots",
-            resources: [
-                .process("Resources")
+            exclude: [
+                "Resources/Info.plist",
+                "Resources/HandyShots.entitlements"
             ],
             swiftSettings: [
                 .enableUpcomingFeature("BareSlashRegexLiterals")
