@@ -22,42 +22,43 @@ struct WelcomeView: View {
     // MARK: - Body
 
     var body: some View {
-        VStack(spacing: 20) {
-            // Welcome header
-            VStack(spacing: 8) {
+        VStack(spacing: 16) {
+            // Compact welcome header
+            VStack(spacing: 6) {
                 Image(systemName: "camera.fill")
-                    .font(.system(size: 48))
+                    .font(.system(size: 36))
                     .foregroundColor(.accentColor)
 
                 Text("Welcome to HandyShots")
-                    .font(.title)
+                    .font(.title2)
                     .fontWeight(.bold)
 
                 Text("Your screenshot assistant")
-                    .font(.subheadline)
+                    .font(.caption)
                     .foregroundColor(.secondary)
             }
-            .padding(.top, 20)
+            .padding(.top, 12)
 
             Divider()
-                .padding(.vertical, 10)
 
-            // Folder detection section
-            VStack(alignment: .leading, spacing: 12) {
+            // Compact folder detection section
+            VStack(alignment: .leading, spacing: 8) {
                 Text("Screenshot Folder Detected")
-                    .font(.headline)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
 
-                HStack {
+                HStack(spacing: 10) {
                     Image(systemName: "folder.fill")
+                        .font(.title2)
                         .foregroundColor(.blue)
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text(FolderDetector.getFolderDisplayName(path: detectedFolder))
-                            .font(.body)
+                            .font(.callout)
                             .fontWeight(.medium)
 
                         Text(detectedFolder)
-                            .font(.caption)
+                            .font(.caption2)
                             .foregroundColor(.secondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
@@ -65,16 +66,16 @@ struct WelcomeView: View {
 
                     Spacer()
                 }
-                .padding()
+                .padding(8)
                 .background(Color.gray.opacity(0.1))
                 .cornerRadius(8)
             }
-            .padding(.horizontal)
+            .padding(.horizontal, 12)
 
             Spacer()
 
-            // Action buttons
-            VStack(spacing: 12) {
+            // Compact action buttons
+            VStack(spacing: 8) {
                 // Use detected folder button
                 Button(action: {
                     useDetectedFolder()
@@ -84,10 +85,9 @@ struct WelcomeView: View {
                         Text("Use This Folder")
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
                 }
                 .buttonStyle(.borderedProminent)
-                .controlSize(.large)
+                .controlSize(.regular)
 
                 // Choose different folder button
                 Button(action: {
@@ -98,13 +98,12 @@ struct WelcomeView: View {
                         Text("Choose Another Folder")
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
                 }
                 .buttonStyle(.bordered)
-                .controlSize(.large)
+                .controlSize(.regular)
             }
-            .padding(.horizontal)
-            .padding(.bottom, 20)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 12)
         }
         .frame(width: 400, height: 300)
     }

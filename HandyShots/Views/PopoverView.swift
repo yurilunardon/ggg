@@ -24,11 +24,19 @@ struct PopoverView: View {
     /// Current folder path (synced with AppStorage)
     @State private var currentFolder: String = ""
 
+    /// Show splash screen on first open
+    @State private var showSplash: Bool = true
+
     // MARK: - Body
 
     var body: some View {
         Group {
-            if isFirstLaunch {
+            if showSplash {
+                // Show animated splash screen
+                SplashView(onComplete: {
+                    showSplash = false
+                })
+            } else if isFirstLaunch {
                 // Show welcome screen on first launch
                 WelcomeView(onFolderSelected: { path in
                     currentFolder = path
@@ -52,37 +60,35 @@ struct PopoverView: View {
 
     private var mainInterface: some View {
         VStack(spacing: 0) {
-            // Header
+            // Compact Header
             header
 
             Divider()
 
-            // Content area
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    // Folder information section
-                    folderSection
+            // Content area (no scroll, compact layout)
+            VStack(alignment: .leading, spacing: 12) {
+                // Folder information section
+                folderSection
 
-                    Divider()
+                Spacer()
 
-                    // Placeholder for future screenshot features
-                    placeholderSection
-                }
-                .padding()
+                // Compact placeholder section
+                placeholderSection
             }
+            .padding(12)
         }
     }
 
     // MARK: - Header
 
     private var header: some View {
-        HStack {
+        HStack(spacing: 10) {
             Image(systemName: "camera.fill")
-                .font(.title2)
+                .font(.title3)
                 .foregroundColor(.accentColor)
 
             Text("HandyShots")
-                .font(.title2)
+                .font(.headline)
                 .fontWeight(.bold)
 
             Spacer()
@@ -92,34 +98,50 @@ struct PopoverView: View {
                 changeFolderAction()
             }) {
                 Image(systemName: "folder.badge.gearshape")
-                    .font(.title3)
+                    .font(.body)
             }
             .buttonStyle(.plain)
             .help("Change screenshot folder")
         }
-        .padding()
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
         .background(Color.gray.opacity(0.05))
     }
 
     // MARK: - Folder Section
 
     private var folderSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Monitored Folder")
-                .font(.headline)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text("Monitored Folder")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
 
-            HStack {
+                Spacer()
+
+                // Status indicator
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(folderExists ? Color.green : Color.red)
+                        .frame(width: 8, height: 8)
+                    Text(folderExists ? "Active" : "Not found")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            HStack(spacing: 10) {
                 Image(systemName: "folder.fill")
-                    .font(.title)
+                    .font(.title2)
                     .foregroundColor(.blue)
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(FolderDetector.getFolderDisplayName(path: currentFolder))
-                        .font(.body)
+                        .font(.callout)
                         .fontWeight(.medium)
 
                     Text(currentFolder)
-                        .font(.caption)
+                        .font(.caption2)
                         .foregroundColor(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -127,70 +149,74 @@ struct PopoverView: View {
 
                 Spacer()
 
-                // Status indicator
-                Circle()
-                    .fill(folderExists ? Color.green : Color.red)
-                    .frame(width: 10, height: 10)
-                    .help(folderExists ? "Folder accessible" : "Folder not found")
-            }
-            .padding()
-            .background(Color.gray.opacity(0.08))
-            .cornerRadius(10)
-
-            // Change folder button
-            Button(action: {
-                changeFolderAction()
-            }) {
-                HStack {
+                // Compact change button
+                Button(action: {
+                    changeFolderAction()
+                }) {
                     Image(systemName: "folder.badge.plus")
-                    Text("Change Folder")
+                        .font(.callout)
                 }
-                .frame(maxWidth: .infinity)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
             }
-            .buttonStyle(.bordered)
+            .padding(8)
+            .background(Color.gray.opacity(0.08))
+            .cornerRadius(8)
         }
     }
 
     // MARK: - Placeholder Section
 
     private var placeholderSection: some View {
-        VStack(alignment: .center, spacing: 12) {
-            Image(systemName: "photo.on.rectangle.angled")
-                .font(.system(size: 48))
-                .foregroundColor(.gray.opacity(0.5))
+        VStack(spacing: 8) {
+            HStack {
+                Image(systemName: "photo.on.rectangle.angled")
+                    .font(.title2)
+                    .foregroundColor(.gray.opacity(0.5))
 
-            Text("Screenshot Gallery")
-                .font(.headline)
-                .foregroundColor(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Screenshot Gallery")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.secondary)
 
-            Text("Future features will appear here")
-                .font(.caption)
-                .foregroundColor(.secondary)
+                    Text("Coming soon")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
 
-            VStack(alignment: .leading, spacing: 8) {
-                featureBadge(icon: "photo.stack", text: "Screenshot thumbnails")
-                featureBadge(icon: "magnifyingglass", text: "Quick Look preview")
-                featureBadge(icon: "hand.draw", text: "Drag & drop support")
-                featureBadge(icon: "doc.text.viewfinder", text: "OCR text recognition")
+                Spacer()
             }
-            .padding(.top, 8)
+
+            // Compact features grid (2 columns)
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    featureBadge(icon: "photo.stack", text: "Thumbnails")
+                    featureBadge(icon: "hand.draw", text: "Drag & drop")
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    featureBadge(icon: "magnifyingglass", text: "Quick Look")
+                    featureBadge(icon: "doc.text.viewfinder", text: "OCR")
+                }
+                Spacer()
+            }
         }
-        .frame(maxWidth: .infinity)
-        .padding()
+        .padding(8)
         .background(Color.gray.opacity(0.05))
-        .cornerRadius(10)
+        .cornerRadius(8)
     }
 
     // MARK: - Helper Views
 
     private func featureBadge(icon: String, text: String) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             Image(systemName: icon)
-                .frame(width: 20)
+                .font(.caption)
+                .frame(width: 16)
                 .foregroundColor(.gray)
 
             Text(text)
-                .font(.caption)
+                .font(.caption2)
                 .foregroundColor(.secondary)
         }
     }
