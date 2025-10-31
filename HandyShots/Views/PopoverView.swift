@@ -144,7 +144,7 @@ struct PopoverView: View {
                             HStack(spacing: 3) {
                                 Image(systemName: "checkmark.circle")
                                     .font(.system(size: 11))
-                                Text("All")
+                                Text("Select All")
                                     .font(.system(size: 10, weight: .medium))
                             }
                             .foregroundColor(.blue)
@@ -317,9 +317,12 @@ struct PopoverView: View {
                 }
             }
         } else {
-            // Regular click: select only this one
-            selectedScreenshots = [screenshot.id]
-            lastSelectedID = screenshot.id
+            // Regular click: select only this one (unless already selected - for double-click support)
+            if !selectedScreenshots.contains(screenshot.id) || selectedScreenshots.count == 1 {
+                selectedScreenshots = [screenshot.id]
+                lastSelectedID = screenshot.id
+            }
+            // If already selected with others, keep the selection for double-click to work
         }
     }
 
@@ -461,6 +464,12 @@ class DragSelectionView: NSView {
     private var selectionStartPoint: NSPoint?
     private var selectionCurrentPoint: NSPoint?
     private var isDraggingSelection: Bool = false
+    private var autoScrollTimer: Timer?
+
+    // Flip coordinate system so origin is top-left
+    override var isFlipped: Bool {
+        return true
+    }
 
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
@@ -490,6 +499,9 @@ class DragSelectionView: NSView {
         isDraggingSelection = true
         selectionCurrentPoint = convert(event.locationInWindow, from: nil)
 
+        // Handle auto-scrolling when near edges
+        handleAutoScroll(at: selectionCurrentPoint)
+
         // Redraw to show selection rectangle
         needsDisplay = true
 
@@ -497,7 +509,76 @@ class DragSelectionView: NSView {
         updateSelectionInRect()
     }
 
+    private func handleAutoScroll(at point: NSPoint?) {
+        guard let point = point,
+              let scrollView = parentScrollView else {
+            stopAutoScroll()
+            return
+        }
+
+        // Get visible rect in scroll view
+        let visibleRect = scrollView.documentVisibleRect
+        let scrollThreshold: CGFloat = 30 // pixels from edge to trigger scroll
+
+        // Check if near top or bottom edge
+        let distanceFromTop = point.y - visibleRect.minY
+        let distanceFromBottom = visibleRect.maxY - point.y
+
+        if distanceFromTop < scrollThreshold || distanceFromBottom < scrollThreshold {
+            // Start auto-scroll if not already running
+            if autoScrollTimer == nil {
+                autoScrollTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+                    self?.performAutoScroll()
+                }
+            }
+        } else {
+            stopAutoScroll()
+        }
+    }
+
+    private func performAutoScroll() {
+        guard let point = selectionCurrentPoint,
+              let scrollView = parentScrollView else {
+            stopAutoScroll()
+            return
+        }
+
+        let visibleRect = scrollView.documentVisibleRect
+        let scrollThreshold: CGFloat = 30
+        let scrollSpeed: CGFloat = 10
+
+        var newOrigin = visibleRect.origin
+
+        // Scroll up if near top
+        if point.y - visibleRect.minY < scrollThreshold {
+            newOrigin.y = max(0, newOrigin.y - scrollSpeed)
+        }
+        // Scroll down if near bottom
+        else if visibleRect.maxY - point.y < scrollThreshold {
+            let maxY = frame.height - visibleRect.height
+            newOrigin.y = min(maxY, newOrigin.y + scrollSpeed)
+        }
+
+        // Perform scroll
+        if newOrigin != visibleRect.origin {
+            scrollView.contentView.scroll(to: newOrigin)
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+
+            // Update selection during scroll
+            needsDisplay = true
+            updateSelectionInRect()
+        }
+    }
+
+    private func stopAutoScroll() {
+        autoScrollTimer?.invalidate()
+        autoScrollTimer = nil
+    }
+
     override func mouseUp(with event: NSEvent) {
+        // Stop auto-scrolling
+        stopAutoScroll()
+
         if isDraggingSelection {
             // Finalize selection
             updateSelectionInRect()
