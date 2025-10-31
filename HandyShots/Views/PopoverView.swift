@@ -128,11 +128,20 @@ struct PopoverView: View {
                     .foregroundColor(.secondary)
                     .fontWeight(.medium)
 
-                Text(folderMonitor.currentFolder)
-                    .font(.caption2)
-                    .foregroundColor(.blue)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                Button(action: {
+                    // Open folder in Finder
+                    let url = URL(fileURLWithPath: folderMonitor.currentFolder)
+                    NSWorkspace.shared.open(url)
+                }) {
+                    Text(folderMonitor.currentFolder)
+                        .font(.caption2)
+                        .foregroundColor(.blue)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .underline()
+                }
+                .buttonStyle(.plain)
+                .help("Click to open folder in Finder")
 
                 Spacer()
 
@@ -155,8 +164,42 @@ struct PopoverView: View {
                         }
                         .buttonStyle(.plain)
                         .help("Select all (⌘A)")
+                    } else if selectedScreenshots.count == screenshots.count {
+                        // All selected - show Deselect All button with counter
+                        HStack(spacing: 6) {
+                            // Counter badge
+                            HStack(spacing: 4) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.white)
+                                Text("\(selectedScreenshots.count)")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundColor(.white)
+                            }
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Color.blue)
+                            .cornerRadius(4)
+
+                            // Deselect All button
+                            Button(action: { deselectAll() }) {
+                                HStack(spacing: 3) {
+                                    Image(systemName: "xmark.circle")
+                                        .font(.system(size: 11))
+                                    Text("Deselect All")
+                                        .font(.system(size: 10, weight: .medium))
+                                }
+                                .foregroundColor(.secondary)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 3)
+                                .background(Color.secondary.opacity(0.1))
+                                .cornerRadius(4)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Deselect all")
+                        }
                     } else {
-                        // Selection badge when items are selected
+                        // Some selected - show counter badge and X button
                         HStack(spacing: 6) {
                             HStack(spacing: 4) {
                                 Image(systemName: "checkmark.circle.fill")
@@ -317,12 +360,20 @@ struct PopoverView: View {
                 }
             }
         } else {
-            // Regular click: select only this one (unless already selected - for double-click support)
-            if !selectedScreenshots.contains(screenshot.id) || selectedScreenshots.count == 1 {
+            // Regular click
+            if selectedScreenshots.contains(screenshot.id) {
+                // Already selected
+                if selectedScreenshots.count == 1 {
+                    // Single item selected - toggle it off
+                    selectedScreenshots.removeAll()
+                    lastSelectedID = nil
+                }
+                // If multiple selected, keep the selection for double-click to work
+            } else {
+                // Not selected - select only this one
                 selectedScreenshots = [screenshot.id]
                 lastSelectedID = screenshot.id
             }
-            // If already selected with others, keep the selection for double-click to work
         }
     }
 
@@ -471,6 +522,11 @@ class DragSelectionView: NSView {
         return true
     }
 
+    // Accept first mouse to handle clicks properly
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        return true
+    }
+
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
 
@@ -484,6 +540,11 @@ class DragSelectionView: NSView {
             selectionStartPoint = point
             selectionCurrentPoint = point
             isDraggingSelection = false // Will become true in mouseDragged
+
+            // Make this view the first responder to ensure we get mouseUp
+            if let window = self.window {
+                window.makeFirstResponder(self)
+            }
         } else {
             // Let the thumbnail handle it
             super.mouseDown(with: event)
@@ -796,6 +857,16 @@ class ThumbnailNSView: NSView {
         updateTrackingAreas()
     }
 
+    override func layout() {
+        super.layout()
+        // Update tracking areas when layout changes
+        updateTrackingAreas()
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        return true
+    }
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
 
@@ -805,12 +876,17 @@ class ThumbnailNSView: NSView {
 
         let area = NSTrackingArea(
             rect: bounds,
-            options: [.mouseEnteredAndExited, .activeInKeyWindow],
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
             owner: self,
             userInfo: nil
         )
         addTrackingArea(area)
         trackingArea = area
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        // Ensure hover state is updated even if mouseEntered doesn't fire
+        super.mouseMoved(with: event)
     }
 
     override func mouseEntered(with event: NSEvent) {
