@@ -178,7 +178,7 @@ struct PopoverView: View {
                 .padding()
             } else {
                 // Grid of screenshots with drag selection support
-                ZStack {
+                ScrollView {
                     LazyVGrid(columns: [
                         GridItem(.adaptive(minimum: 80), spacing: 8)
                     ], spacing: 8) {
@@ -193,6 +193,9 @@ struct PopoverView: View {
                                     if !isDragSelecting {
                                         toggleSelection(screenshot: screenshot)
                                     }
+                                },
+                                onOpen: {
+                                    openScreenshots(for: screenshot)
                                 }
                             )
                             .id(screenshot.id)
@@ -200,28 +203,15 @@ struct PopoverView: View {
                     }
                     .padding(12)
                     .background(
-                        GeometryReader { geometry in
-                            Color.clear
-                                .contentShape(Rectangle())
-                                .gesture(
-                                    DragGesture(minimumDistance: 5)
-                                        .onChanged { value in
-                                            handleDragSelectionChanged(value: value, in: geometry.frame(in: .local))
-                                        }
-                                        .onEnded { value in
-                                            handleDragSelectionEnded()
-                                        }
-                                )
-                        }
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                // Deselect all when clicking empty area
+                                selectedScreenshots.removeAll()
+                            }
                     )
-
-                    // Selection rectangle overlay
-                    if isDragSelecting,
-                       let start = dragStartLocation,
-                       let current = currentDragLocation {
-                        SelectionRectangle(start: start, current: current)
-                    }
                 }
+                .coordinateSpace(name: "scroll")
             }
         }
     }
@@ -284,63 +274,22 @@ struct PopoverView: View {
         }
     }
 
-    /// Handle drag selection gesture changed
-    private func handleDragSelectionChanged(value: DragGesture.Value, in frame: CGRect) {
-        if !isDragSelecting {
-            isDragSelecting = true
-            dragStartLocation = value.startLocation
-        }
-        currentDragLocation = value.location
+    /// Open screenshot(s) - if selected, open all selected ones
+    private func openScreenshots(for screenshot: Screenshot) {
+        // Don't close popover when opening files
+        if selectedScreenshots.contains(screenshot.id) && selectedScreenshots.count > 1 {
+            // Open all selected screenshots
+            let selectedURLs = screenshots
+                .filter { selectedScreenshots.contains($0.id) }
+                .map { $0.url }
 
-        // Calculate selection rectangle
-        guard let start = dragStartLocation else { return }
-        let selectionRect = CGRect(
-            x: min(start.x, value.location.x),
-            y: min(start.y, value.location.y),
-            width: abs(value.location.x - start.x),
-            height: abs(value.location.y - start.y)
-        )
-
-        // Update selection based on which thumbnails intersect with rectangle
-        updateSelectionFromRect(selectionRect)
-    }
-
-    /// Handle drag selection gesture ended
-    private func handleDragSelectionEnded() {
-        isDragSelecting = false
-        dragStartLocation = nil
-        currentDragLocation = nil
-    }
-
-    /// Update selection based on rectangle intersection
-    private func updateSelectionFromRect(_ rect: CGRect) {
-        // For now, select all screenshots that could be in the area
-        // This is a simplified version - ideally we'd calculate exact positions
-        // For MVP, we'll select based on a simple heuristic
-
-        let gridPadding: CGFloat = 12
-        let itemSize: CGFloat = 80
-        let spacing: CGFloat = 8
-
-        // Calculate which items are likely in the selection rect
-        var newSelection = Set<String>()
-
-        for (index, screenshot) in screenshots.enumerated() {
-            // Approximate position in grid (3 columns based on 400px width)
-            let col = index % 4
-            let row = index / 4
-
-            let itemX = gridPadding + CGFloat(col) * (itemSize + spacing)
-            let itemY = gridPadding + CGFloat(row) * (itemSize + spacing + 20) // 20 for text
-
-            let itemRect = CGRect(x: itemX, y: itemY, width: itemSize, height: itemSize + 20)
-
-            if rect.intersects(itemRect) {
-                newSelection.insert(screenshot.id)
+            for url in selectedURLs {
+                NSWorkspace.shared.open(url)
             }
+        } else {
+            // Open just this one
+            NSWorkspace.shared.open(screenshot.url)
         }
-
-        selectedScreenshots = newSelection
     }
 
     /// Open folder picker to change screenshot folder
@@ -409,6 +358,7 @@ struct ScreenshotThumbnailView: View {
     let selectedIDs: Set<String>
     let enableHoverZoom: Bool
     let onSelect: () -> Void
+    let onOpen: () -> Void
 
     @AppStorage("dragMode") private var dragMode: String = "copy" // "copy" or "move"
 
@@ -417,7 +367,8 @@ struct ScreenshotThumbnailView: View {
             screenshot: screenshot,
             isSelected: isSelected,
             enableHoverZoom: enableHoverZoom,
-            onSelect: onSelect
+            onSelect: onSelect,
+            onOpen: onOpen
         )
         .frame(width: 80, height: 100)
     }
@@ -431,6 +382,7 @@ struct ThumbnailViewInternal: NSViewRepresentable {
     let isSelected: Bool
     let enableHoverZoom: Bool
     let onSelect: () -> Void
+    let onOpen: () -> Void
 
     func makeNSView(context: Context) -> ThumbnailNSView {
         let view = ThumbnailNSView()
@@ -443,6 +395,7 @@ struct ThumbnailViewInternal: NSViewRepresentable {
         nsView.isSelected = isSelected
         nsView.enableHoverZoom = enableHoverZoom
         nsView.onSelect = onSelect
+        nsView.onOpen = onOpen
         nsView.needsDisplay = true
     }
 
@@ -462,6 +415,7 @@ class ThumbnailNSView: NSView {
     var isSelected: Bool = false
     var enableHoverZoom: Bool = false
     var onSelect: (() -> Void)?
+    var onOpen: (() -> Void)?
     var coordinator: ThumbnailViewInternal.Coordinator?
 
     @AppStorage("dragMode") private var dragMode: String = "copy"
@@ -603,10 +557,8 @@ class ThumbnailNSView: NSView {
         if event.modifierFlags.contains(.command) {
             onSelect?()
         } else {
-            // Regular click opens the screenshot
-            if let url = screenshot?.url {
-                NSWorkspace.shared.open(url)
-            }
+            // Regular click opens the screenshot(s)
+            onOpen?()
         }
 
         isDragging = false

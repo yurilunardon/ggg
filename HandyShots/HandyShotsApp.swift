@@ -38,6 +38,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// Folder monitor instance
     var folderMonitor: FolderMonitor?
 
+    /// Track if we're opening a file (to keep popover open)
+    var isOpeningFile: Bool = false
+
     // MARK: - Application Lifecycle
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -47,20 +50,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setupMenuBarIcon()
         setupPopover()
         startFolderMonitoring()
-        setupAutoCloseObserver()
-    }
-
-    /// Setup observer to auto-close popover when app loses focus
-    private func setupAutoCloseObserver() {
-        NotificationCenter.default.addObserver(
-            forName: NSApplication.didResignActiveNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            if self?.popover.isShown == true {
-                self?.popover.performClose(nil)
-            }
-        }
     }
 
     // MARK: - Setup Methods
