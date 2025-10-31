@@ -47,6 +47,7 @@ struct PopoverView: View {
     /// Drag selection state
     @State private var isDragSelecting: Bool = false
     @State private var dragStartLocation: CGPoint?
+    @State private var currentDragLocation: CGPoint?
 
     // MARK: - Body
 
@@ -176,26 +177,51 @@ struct PopoverView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding()
             } else {
-                // Grid of screenshots
-                LazyVGrid(columns: [
-                    GridItem(.adaptive(minimum: 80), spacing: 8)
-                ], spacing: 8) {
-                    ForEach(screenshots) { screenshot in
-                        ScreenshotThumbnailView(
-                            screenshot: screenshot,
-                            isSelected: selectedScreenshots.contains(screenshot.id),
-                            allScreenshots: screenshots,
-                            selectedIDs: selectedScreenshots,
-                            enableHoverZoom: enableHoverZoom,
-                            onSelect: {
-                                if !isDragSelecting {
-                                    toggleSelection(screenshot: screenshot)
+                // Grid of screenshots with drag selection support
+                ZStack {
+                    LazyVGrid(columns: [
+                        GridItem(.adaptive(minimum: 80), spacing: 8)
+                    ], spacing: 8) {
+                        ForEach(screenshots) { screenshot in
+                            ScreenshotThumbnailView(
+                                screenshot: screenshot,
+                                isSelected: selectedScreenshots.contains(screenshot.id),
+                                allScreenshots: screenshots,
+                                selectedIDs: selectedScreenshots,
+                                enableHoverZoom: enableHoverZoom,
+                                onSelect: {
+                                    if !isDragSelecting {
+                                        toggleSelection(screenshot: screenshot)
+                                    }
                                 }
-                            }
-                        )
+                            )
+                            .id(screenshot.id)
+                        }
+                    }
+                    .padding(12)
+                    .background(
+                        GeometryReader { geometry in
+                            Color.clear
+                                .contentShape(Rectangle())
+                                .gesture(
+                                    DragGesture(minimumDistance: 5)
+                                        .onChanged { value in
+                                            handleDragSelectionChanged(value: value, in: geometry.frame(in: .local))
+                                        }
+                                        .onEnded { value in
+                                            handleDragSelectionEnded()
+                                        }
+                                )
+                        }
+                    )
+
+                    // Selection rectangle overlay
+                    if isDragSelecting,
+                       let start = dragStartLocation,
+                       let current = currentDragLocation {
+                        SelectionRectangle(start: start, current: current)
                     }
                 }
-                .padding(12)
             }
         }
     }
@@ -256,6 +282,65 @@ struct PopoverView: View {
         } else {
             selectedScreenshots.insert(screenshot.id)
         }
+    }
+
+    /// Handle drag selection gesture changed
+    private func handleDragSelectionChanged(value: DragGesture.Value, in frame: CGRect) {
+        if !isDragSelecting {
+            isDragSelecting = true
+            dragStartLocation = value.startLocation
+        }
+        currentDragLocation = value.location
+
+        // Calculate selection rectangle
+        guard let start = dragStartLocation else { return }
+        let selectionRect = CGRect(
+            x: min(start.x, value.location.x),
+            y: min(start.y, value.location.y),
+            width: abs(value.location.x - start.x),
+            height: abs(value.location.y - start.y)
+        )
+
+        // Update selection based on which thumbnails intersect with rectangle
+        updateSelectionFromRect(selectionRect)
+    }
+
+    /// Handle drag selection gesture ended
+    private func handleDragSelectionEnded() {
+        isDragSelecting = false
+        dragStartLocation = nil
+        currentDragLocation = nil
+    }
+
+    /// Update selection based on rectangle intersection
+    private func updateSelectionFromRect(_ rect: CGRect) {
+        // For now, select all screenshots that could be in the area
+        // This is a simplified version - ideally we'd calculate exact positions
+        // For MVP, we'll select based on a simple heuristic
+
+        let gridPadding: CGFloat = 12
+        let itemSize: CGFloat = 80
+        let spacing: CGFloat = 8
+
+        // Calculate which items are likely in the selection rect
+        var newSelection = Set<String>()
+
+        for (index, screenshot) in screenshots.enumerated() {
+            // Approximate position in grid (3 columns based on 400px width)
+            let col = index % 4
+            let row = index / 4
+
+            let itemX = gridPadding + CGFloat(col) * (itemSize + spacing)
+            let itemY = gridPadding + CGFloat(row) * (itemSize + spacing + 20) // 20 for text
+
+            let itemRect = CGRect(x: itemX, y: itemY, width: itemSize, height: itemSize + 20)
+
+            if rect.intersects(itemRect) {
+                newSelection.insert(screenshot.id)
+            }
+        }
+
+        selectedScreenshots = newSelection
     }
 
     /// Open folder picker to change screenshot folder
@@ -383,13 +468,15 @@ class ThumbnailNSView: NSView {
 
     private var previewTimer: Timer?
     private var isDragging: Bool = false
+    private var mouseDownPoint: NSPoint?
+    private var dragThreshold: CGFloat = 5.0 // pixels to move before considering it a drag
 
     private var isHovering: Bool = false {
         didSet {
             if isHovering && enableHoverZoom {
-                // Start timer to show preview after 3 seconds
+                // Start timer to show preview after 2 seconds
                 previewTimer?.invalidate()
-                previewTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { [weak self] _ in
+                previewTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { [weak self] _ in
                     self?.showPreview()
                 }
             } else {
@@ -445,8 +532,9 @@ class ThumbnailNSView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        // Reset drag flag
+        // Reset drag flag and save mouse position
         isDragging = false
+        mouseDownPoint = event.locationInWindow
 
         // Cancel preview timer on mouse down
         previewTimer?.invalidate()
@@ -457,6 +545,15 @@ class ThumbnailNSView: NSView {
     override func mouseDragged(with event: NSEvent) {
         guard let screenshot = screenshot else { return }
 
+        // Check if we've moved enough to consider this a drag
+        if let downPoint = mouseDownPoint {
+            let currentPoint = event.locationInWindow
+            let distance = hypot(currentPoint.x - downPoint.x, currentPoint.y - downPoint.y)
+
+            // Only start drag if moved more than threshold
+            guard distance > dragThreshold else { return }
+        }
+
         // Mark that we're dragging
         isDragging = true
 
@@ -464,22 +561,22 @@ class ThumbnailNSView: NSView {
         let fileURL = screenshot.url as NSURL
         let item = NSDraggingItem(pasteboardWriter: fileURL)
 
-        // Set drag image - start small, will grow as it moves
+        // Set drag image - start slightly bigger than thumbnail (90px)
         if let thumbnail = screenshot.thumbnail {
             let dragImage = thumbnail
 
-            // Start with small size (40x40) that will animate to full size
-            let smallSize: CGFloat = 40
+            // Start slightly bigger than thumbnail (80x80 -> 90x90)
+            let startSize: CGFloat = 90
             let startFrame = NSRect(
                 x: 0, y: 0,
-                width: smallSize,
-                height: smallSize
+                width: startSize,
+                height: startSize
             )
 
-            // Set the dragging frame to start small
+            // Set the dragging frame
             item.setDraggingFrame(startFrame, contents: dragImage)
 
-            // Configure to animate to destination - this makes it grow as you drag
+            // Configure to animate to destination - grows as you drag
             item.imageComponentsProvider = {
                 let component = NSDraggingImageComponent(key: NSDraggingItem.ImageComponentKey.icon)
                 component.contents = dragImage
@@ -632,6 +729,32 @@ extension ThumbnailNSView: NSDraggingSource {
     func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
         // If move operation completed, we could delete the file here
         // For now, macOS will handle it automatically
+    }
+}
+
+// MARK: - Selection Rectangle
+
+struct SelectionRectangle: View {
+    let start: CGPoint
+    let current: CGPoint
+
+    var body: some View {
+        let rect = CGRect(
+            x: min(start.x, current.x),
+            y: min(start.y, current.y),
+            width: abs(current.x - start.x),
+            height: abs(current.y - start.y)
+        )
+
+        Rectangle()
+            .fill(Color.blue.opacity(0.2))
+            .overlay(
+                Rectangle()
+                    .strokeBorder(Color.blue, lineWidth: 2)
+            )
+            .frame(width: rect.width, height: rect.height)
+            .position(x: rect.midX, y: rect.midY)
+            .allowsHitTesting(false)
     }
 }
 
