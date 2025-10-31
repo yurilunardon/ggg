@@ -112,18 +112,32 @@ struct PopoverView: View {
                     .font(.headline)
                     .fontWeight(.bold)
 
-                // Time filter indicator
-                Text("(\(timeFilter)min)")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                // Time filter indicator - green badge style
+                HStack(spacing: 3) {
+                    Image(systemName: "clock.fill")
+                        .font(.system(size: 10))
+                        .foregroundColor(.green)
+                    Text("\(timeFilter)min")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.green)
+                }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(Color.green.opacity(0.1))
+                .cornerRadius(4)
 
                 Spacer()
 
-                // Status indicator
-                Circle()
-                    .fill(folderExists ? Color.green : Color.red)
-                    .frame(width: 6, height: 6)
-                    .help(folderExists ? "Folder accessible" : "Folder not accessible")
+                // Change folder button
+                Button(action: {
+                    changeFolderAction()
+                }) {
+                    Image(systemName: "folder")
+                        .font(.system(size: 14))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Change screenshot folder")
             }
 
             // Monitored folder row
@@ -150,9 +164,13 @@ struct PopoverView: View {
 
                 Spacer()
 
-                // Selection controls
-                if !screenshots.isEmpty {
-                    if selectedScreenshots.isEmpty {
+                // Selection controls - always reserve space to prevent header resize
+                Group {
+                    if screenshots.isEmpty {
+                        // Invisible placeholder to maintain height
+                        Color.clear
+                            .frame(width: 1, height: 24)
+                    } else if selectedScreenshots.isEmpty {
                         // Select All button when nothing selected
                         Button(action: { selectAll() }) {
                             HStack(spacing: 3) {
@@ -231,16 +249,6 @@ struct PopoverView: View {
                         }
                     }
                 }
-
-                // Change folder button
-                Button(action: {
-                    changeFolderAction()
-                }) {
-                    Image(systemName: "folder.badge.gearshape")
-                        .font(.caption)
-                }
-                .buttonStyle(.plain)
-                .help("Change screenshot folder")
             }
         }
         .padding(.horizontal, 12)
@@ -804,7 +812,7 @@ class ScreenshotGridNSView: NSScrollView {
         thumbnailViews.forEach { $0.removeFromSuperview() }
         thumbnailViews.removeAll()
 
-        let padding: CGFloat = 16
+        let padding: CGFloat = 8
         let itemWidth: CGFloat = 80
         let itemHeight: CGFloat = 100
         let spacing: CGFloat = 8
@@ -1125,45 +1133,37 @@ class ThumbnailNSView: NSView {
             if secondsRemaining <= 30 {
                 let countdownText = "\(secondsRemaining)"
                 let countdownAttributes: [NSAttributedString.Key: Any] = [
-                    .font: NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .bold),
+                    .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .heavy),
                     .foregroundColor: NSColor.white
                 ]
-                let countdownSize = (countdownText as NSString).size(withAttributes: countdownAttributes)
 
-                // Compact badge
-                let iconSize: CGFloat = 11
-                let badgeWidth = iconSize + countdownSize.width + 8
-                let badgeHeight: CGFloat = 16
-
+                // Circular badge design
+                let badgeSize: CGFloat = 24
                 let badgeRect = NSRect(
-                    x: imageRect.minX + 3,
-                    y: imageRect.maxY - badgeHeight - 3,
-                    width: badgeWidth,
-                    height: badgeHeight
+                    x: imageRect.maxX - badgeSize - 4,
+                    y: imageRect.minY + 4,
+                    width: badgeSize,
+                    height: badgeSize
                 )
 
-                // Draw rounded red background with slight transparency
                 NSGraphicsContext.current?.saveGraphicsState()
-                NSColor.systemRed.withAlphaComponent(0.95).setFill()
-                let badgePath = NSBezierPath(roundedRect: badgeRect, xRadius: 8, yRadius: 8)
-                badgePath.fill()
 
-                // Draw clock icon
-                let clockRect = NSRect(
-                    x: badgeRect.minX + 3,
-                    y: badgeRect.minY + (badgeHeight - iconSize) / 2,
-                    width: iconSize,
-                    height: iconSize
-                )
-                let clockImage = NSImage(systemSymbolName: "clock.fill", accessibilityDescription: nil)
-                clockImage?.isTemplate = true
-                NSColor.white.set()
-                clockImage?.draw(in: clockRect)
+                // Draw white border circle
+                NSColor.white.setFill()
+                let borderCircle = NSBezierPath(ovalIn: badgeRect)
+                borderCircle.fill()
 
-                // Draw countdown text
+                // Draw inner red circle
+                let innerRect = badgeRect.insetBy(dx: 2, dy: 2)
+                NSColor.systemRed.setFill()
+                let innerCircle = NSBezierPath(ovalIn: innerRect)
+                innerCircle.fill()
+
+                // Draw countdown text centered
+                let countdownSize = (countdownText as NSString).size(withAttributes: countdownAttributes)
                 let textRect = NSRect(
-                    x: clockRect.maxX + 2,
-                    y: badgeRect.minY + (badgeHeight - countdownSize.height) / 2 - 0.5,
+                    x: badgeRect.midX - countdownSize.width / 2,
+                    y: badgeRect.midY - countdownSize.height / 2 + 1,
                     width: countdownSize.width,
                     height: countdownSize.height
                 )
