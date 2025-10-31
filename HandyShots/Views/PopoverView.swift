@@ -60,6 +60,10 @@ struct PopoverView: View {
     @State private var showDeleteConfirmation: Bool = false
     @State private var pendingDeletion: [Screenshot] = []
 
+    /// Recently hidden screenshots (for Revert functionality)
+    @State private var recentlyHiddenIDs: Set<String> = []
+    @State private var showRevertBanner: Bool = false
+
     // MARK: - Body
 
     var body: some View {
@@ -97,6 +101,13 @@ struct PopoverView: View {
                 if let message = folderMonitor.folderChangeMessage {
                     notificationBanner(message: message)
                         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: folderMonitor.folderChangeMessage)
+                }
+
+                // Revert banner (if screenshots were hidden)
+                if showRevertBanner {
+                    revertBanner
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: showRevertBanner)
                 }
 
                 // Screenshot grid
@@ -175,15 +186,15 @@ struct PopoverView: View {
                     let url = URL(fileURLWithPath: folderMonitor.currentFolder)
                     NSWorkspace.shared.open(url)
                 }) {
-                    Text(folderMonitor.currentFolder)
+                    // Show only folder name, not full path
+                    Text(URL(fileURLWithPath: folderMonitor.currentFolder).lastPathComponent)
                         .font(.caption2)
                         .foregroundColor(.blue)
                         .lineLimit(1)
-                        .truncationMode(.middle)
                         .underline()
                 }
                 .buttonStyle(.plain)
-                .help("Click to open folder in Finder")
+                .help(folderMonitor.currentFolder) // Full path in tooltip
 
                 Spacer()
 
@@ -217,83 +228,46 @@ struct PopoverView: View {
                         }
                         .buttonStyle(.plain)
                         .help("Select all (⌘A)")
-                    } else if selectedScreenshots.count == 1 {
-                        // Single item selected - show counter badge, trash, and X icon
-                        HStack(spacing: 6) {
-                            HStack(spacing: 4) {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .font(.system(size: 10))
-                                    .foregroundColor(.white)
-                                Text("1")
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .foregroundColor(.white)
-                            }
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 3)
-                            .background(Color.blue)
-                            .cornerRadius(4)
-                            .help("1 screenshot selected")
-
-                            // Trash button
-                            Button(action: { deleteSelectedScreenshots() }) {
-                                Image(systemName: "trash")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(.red)
-                            }
-                            .buttonStyle(.plain)
-                            .help("Delete (⌫)")
-
-                            Button(action: { deselectAll() }) {
-                                Image(systemName: "xmark.circle.fill")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(.secondary)
-                            }
-                            .buttonStyle(.plain)
-                            .help("Deselect")
-                        }
                     } else {
-                        // 2+ selected - show counter, trash, and Deselect All button
+                        // Screenshots selected - Counter + Deselect on left, Trash on right
                         HStack(spacing: 6) {
-                            // Counter badge
+                            // Counter badge + Deselect button (left side)
                             HStack(spacing: 4) {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .font(.system(size: 10))
-                                    .foregroundColor(.white)
-                                Text("\(selectedScreenshots.count)")
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .foregroundColor(.white)
-                            }
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 3)
-                            .background(Color.blue)
-                            .cornerRadius(4)
-                            .help("\(selectedScreenshots.count) screenshots selected")
-
-                            // Trash button
-                            Button(action: { deleteSelectedScreenshots() }) {
-                                Image(systemName: "trash")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(.red)
-                            }
-                            .buttonStyle(.plain)
-                            .help("Delete \(selectedScreenshots.count) screenshots (⌫)")
-
-                            // Deselect All button
-                            Button(action: { deselectAll() }) {
-                                HStack(spacing: 3) {
-                                    Image(systemName: "xmark.circle")
-                                        .font(.system(size: 11))
-                                    Text("Deselect All")
-                                        .font(.system(size: 10, weight: .medium))
+                                // Counter badge
+                                HStack(spacing: 4) {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .font(.system(size: 10))
+                                        .foregroundColor(.white)
+                                    Text("\(selectedScreenshots.count)")
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .foregroundColor(.white)
                                 }
-                                .foregroundColor(.secondary)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 3)
-                                .background(Color.secondary.opacity(0.1))
+                                .background(Color.blue)
                                 .cornerRadius(4)
+                                .help("\(selectedScreenshots.count) screenshot\(selectedScreenshots.count == 1 ? "" : "s") selected")
+
+                                // Deselect button
+                                Button(action: { deselectAll() }) {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.secondary)
+                                }
+                                .buttonStyle(.plain)
+                                .help("Deselect all")
+                            }
+
+                            Spacer()
+
+                            // Trash button (right side)
+                            Button(action: { deleteSelectedScreenshots() }) {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.red)
                             }
                             .buttonStyle(.plain)
-                            .help("Deselect all")
+                            .help("Delete \(selectedScreenshots.count) screenshot\(selectedScreenshots.count == 1 ? "" : "s") (⌫)")
                         }
                     }
                 }
@@ -448,6 +422,54 @@ struct PopoverView: View {
         }
     }
 
+    /// Revert banner for recently hidden screenshots
+    private var revertBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "eye.slash.fill")
+                .font(.callout)
+                .foregroundColor(.orange)
+
+            Text("\(recentlyHiddenIDs.count) screenshot\(recentlyHiddenIDs.count == 1 ? "" : "s") hidden")
+                .font(.caption)
+                .foregroundColor(.primary)
+
+            Spacer()
+
+            Button(action: {
+                revertHiddenScreenshots()
+            }) {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.uturn.backward")
+                        .font(.caption)
+                    Text("Revert")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(Color.orange)
+                .cornerRadius(6)
+            }
+            .buttonStyle(.plain)
+
+            Button(action: {
+                withAnimation {
+                    showRevertBanner = false
+                    recentlyHiddenIDs.removeAll()
+                }
+            }) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.callout)
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color.orange.opacity(0.1))
+    }
+
     /// Notification banner for folder changes
     private func notificationBanner(message: String) -> some View {
         HStack(spacing: 10) {
@@ -583,11 +605,26 @@ struct PopoverView: View {
             print("🗑️ Deleted \(deletedCount) of \(pendingDeletion.count) files from disk")
         } else {
             // "hideFromView" mode - add IDs to hidden list without deleting files
+            let hiddenIDs = Set(pendingDeletion.map { $0.id })
             for screenshot in pendingDeletion {
                 hiddenScreenshotIDs.insert(screenshot.id)
             }
             saveHiddenScreenshotIDs()
             print("👁️ Hiding \(pendingDeletion.count) screenshot(s) from view (files remain on disk)")
+
+            // Show revert banner for 5 seconds
+            recentlyHiddenIDs = hiddenIDs
+            withAnimation {
+                showRevertBanner = true
+            }
+
+            // Auto-hide banner after 5 seconds
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                withAnimation {
+                    self.showRevertBanner = false
+                    self.recentlyHiddenIDs.removeAll()
+                }
+            }
         }
 
         // Remove deleted/hidden screenshots from the display list
@@ -603,6 +640,26 @@ struct PopoverView: View {
 
         // Refresh to ensure consistency
         refreshScreenshots()
+    }
+
+    /// Revert recently hidden screenshots
+    private func revertHiddenScreenshots() {
+        // Remove from hidden list
+        for id in recentlyHiddenIDs {
+            hiddenScreenshotIDs.remove(id)
+        }
+        saveHiddenScreenshotIDs()
+
+        // Hide banner
+        withAnimation {
+            showRevertBanner = false
+            recentlyHiddenIDs.removeAll()
+        }
+
+        // Refresh to show the restored screenshots
+        refreshScreenshots()
+
+        print("↩️ Reverted \(recentlyHiddenIDs.count) hidden screenshot(s)")
     }
 
     /// Open screenshot(s) - if selected, open all selected ones
@@ -793,10 +850,10 @@ class DragSelectionView: NSView {
         // Convert mouse position
         let actualPoint = convert(event.locationInWindow, from: nil)
 
-        // Clamp to grid bounds (where thumbnails actually are)
+        // Clamp to full view bounds
         let clampedPoint = NSPoint(
-            x: max(gridBounds.minX, min(actualPoint.x, gridBounds.maxX)),
-            y: max(gridBounds.minY, min(actualPoint.y, gridBounds.maxY))
+            x: max(0, min(actualPoint.x, bounds.width)),
+            y: max(0, min(actualPoint.y, bounds.height))
         )
         selectionCurrentPoint = clampedPoint
 
@@ -933,14 +990,14 @@ class DragSelectionView: NSView {
            let startPoint = selectionStartPoint,
            let currentPoint = selectionCurrentPoint {
 
-            // Clamp both points to grid bounds
+            // Clamp both points to view bounds
             let clampedStart = NSPoint(
-                x: max(gridBounds.minX, min(startPoint.x, gridBounds.maxX)),
-                y: max(gridBounds.minY, min(startPoint.y, gridBounds.maxY))
+                x: max(0, min(startPoint.x, bounds.width)),
+                y: max(0, min(startPoint.y, bounds.height))
             )
             let clampedCurrent = NSPoint(
-                x: max(gridBounds.minX, min(currentPoint.x, gridBounds.maxX)),
-                y: max(gridBounds.minY, min(currentPoint.y, gridBounds.maxY))
+                x: max(0, min(currentPoint.x, bounds.width)),
+                y: max(0, min(currentPoint.y, bounds.height))
             )
 
             let selectionRect = NSRect(
@@ -1349,40 +1406,33 @@ class ThumbnailNSView: NSView {
             // Draw expiring indicator if screenshot is about to disappear (<= 30 seconds)
             let secondsRemaining = secondsUntilExpiration(for: screenshot)
             if secondsRemaining <= 30 {
-                let countdownText = "\(secondsRemaining)"
-                let countdownAttributes: [NSAttributedString.Key: Any] = [
-                    .font: NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .heavy),
-                    .foregroundColor: NSColor.white
-                ]
-                let countdownSize = (countdownText as NSString).size(withAttributes: countdownAttributes)
-
-                // Pill-shaped badge with clock icon and countdown
-                let iconSize: CGFloat = 13
-                let badgeWidth = iconSize + countdownSize.width + 14
-                let badgeHeight: CGFloat = 20
+                // Simple red clock badge (similar to green time filter badge)
+                let iconSize: CGFloat = 18
+                let badgeSize: CGFloat = 24
 
                 let badgeRect = NSRect(
-                    x: imageRect.maxX - badgeWidth - 3,
-                    y: imageRect.minY + 3,
-                    width: badgeWidth,
-                    height: badgeHeight
+                    x: imageRect.maxX - badgeSize - 4,
+                    y: imageRect.minY + 4,
+                    width: badgeSize,
+                    height: badgeSize
                 )
 
                 NSGraphicsContext.current?.saveGraphicsState()
 
-                // Draw red pill background with white border
-                let outerPath = NSBezierPath(roundedRect: badgeRect, xRadius: badgeHeight / 2, yRadius: badgeHeight / 2)
-                NSColor.white.setFill()
-                outerPath.fill()
-
-                let innerPath = NSBezierPath(roundedRect: badgeRect.insetBy(dx: 1.5, dy: 1.5), xRadius: (badgeHeight - 3) / 2, yRadius: (badgeHeight - 3) / 2)
+                // Draw circular background with red fill
+                let circlePath = NSBezierPath(ovalIn: badgeRect)
                 NSColor.systemRed.setFill()
-                innerPath.fill()
+                circlePath.fill()
 
-                // Draw clock icon
+                // Draw white border
+                NSColor.white.setStroke()
+                circlePath.lineWidth = 2
+                circlePath.stroke()
+
+                // Draw white clock icon centered
                 let clockRect = NSRect(
-                    x: badgeRect.minX + 4,
-                    y: badgeRect.minY + (badgeHeight - iconSize) / 2,
+                    x: badgeRect.midX - iconSize / 2,
+                    y: badgeRect.midY - iconSize / 2,
                     width: iconSize,
                     height: iconSize
                 )
@@ -1390,15 +1440,6 @@ class ThumbnailNSView: NSView {
                 clockImage?.isTemplate = true
                 NSColor.white.set()
                 clockImage?.draw(in: clockRect)
-
-                // Draw countdown text
-                let textRect = NSRect(
-                    x: clockRect.maxX + 1,
-                    y: badgeRect.minY + (badgeHeight - countdownSize.height) / 2,
-                    width: countdownSize.width,
-                    height: countdownSize.height
-                )
-                (countdownText as NSString).draw(in: textRect, withAttributes: countdownAttributes)
 
                 NSGraphicsContext.current?.restoreGraphicsState()
             }
