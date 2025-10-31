@@ -44,10 +44,8 @@ struct PopoverView: View {
     /// Selected screenshots for drag & drop
     @State private var selectedScreenshots: Set<String> = []
 
-    /// Drag selection state
-    @State private var isDragSelecting: Bool = false
-    @State private var dragStartLocation: CGPoint?
-    @State private var currentDragLocation: CGPoint?
+    /// Last clicked screenshot for shift+click range selection
+    @State private var lastSelectedID: String?
 
     // MARK: - Body
 
@@ -138,6 +136,25 @@ struct PopoverView: View {
 
                 Spacer()
 
+                // Selection buttons
+                if !screenshots.isEmpty {
+                    Button(action: { selectAll() }) {
+                        Text("Select All")
+                            .font(.caption2)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Select all screenshots (Cmd+A)")
+
+                    if !selectedScreenshots.isEmpty {
+                        Button(action: { deselectAll() }) {
+                            Text("Deselect")
+                                .font(.caption2)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Deselect all")
+                    }
+                }
+
                 // Change folder button
                 Button(action: {
                     changeFolderAction()
@@ -177,41 +194,29 @@ struct PopoverView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding()
             } else {
-                // Grid of screenshots with drag selection support
-                ScrollView {
-                    LazyVGrid(columns: [
-                        GridItem(.adaptive(minimum: 80), spacing: 8)
-                    ], spacing: 8) {
-                        ForEach(screenshots) { screenshot in
-                            ScreenshotThumbnailView(
-                                screenshot: screenshot,
-                                isSelected: selectedScreenshots.contains(screenshot.id),
-                                allScreenshots: screenshots,
-                                selectedIDs: selectedScreenshots,
-                                enableHoverZoom: enableHoverZoom,
-                                onSelect: {
-                                    if !isDragSelecting {
-                                        toggleSelection(screenshot: screenshot)
-                                    }
-                                },
-                                onOpen: {
-                                    openScreenshots(for: screenshot)
-                                }
-                            )
-                            .id(screenshot.id)
-                        }
+                // Grid of screenshots with selection support
+                ScreenshotGridView(
+                    screenshots: screenshots,
+                    selectedScreenshots: $selectedScreenshots,
+                    enableHoverZoom: enableHoverZoom,
+                    lastSelectedID: $lastSelectedID,
+                    onSelectScreenshot: { screenshot, modifiers in
+                        handleSelection(screenshot: screenshot, modifiers: modifiers)
+                    },
+                    onOpenScreenshots: { screenshot in
+                        openScreenshots(for: screenshot)
                     }
-                    .padding(12)
-                    .background(
-                        Color.clear
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                // Deselect all when clicking empty area
-                                selectedScreenshots.removeAll()
-                            }
-                    )
+                )
+                .onAppear {
+                    // Setup keyboard shortcuts
+                    NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                        if event.modifierFlags.contains(.command) && event.charactersIgnoringModifiers == "a" {
+                            selectAll()
+                            return nil // consume event
+                        }
+                        return event
+                    }
                 }
-                .coordinateSpace(name: "scroll")
             }
         }
     }
@@ -265,18 +270,45 @@ struct PopoverView: View {
 
     // MARK: - Actions
 
-    /// Toggle screenshot selection
-    private func toggleSelection(screenshot: Screenshot) {
-        if selectedScreenshots.contains(screenshot.id) {
-            selectedScreenshots.remove(screenshot.id)
+    /// Handle screenshot selection with modifier keys (macOS Finder-style)
+    private func handleSelection(screenshot: Screenshot, modifiers: NSEvent.ModifierFlags) {
+        if modifiers.contains(.command) {
+            // Cmd+Click: toggle selection
+            if selectedScreenshots.contains(screenshot.id) {
+                selectedScreenshots.remove(screenshot.id)
+            } else {
+                selectedScreenshots.insert(screenshot.id)
+                lastSelectedID = screenshot.id
+            }
+        } else if modifiers.contains(.shift), let lastID = lastSelectedID {
+            // Shift+Click: select range
+            if let startIndex = screenshots.firstIndex(where: { $0.id == lastID }),
+               let endIndex = screenshots.firstIndex(where: { $0.id == screenshot.id }) {
+                let range = min(startIndex, endIndex)...max(startIndex, endIndex)
+                for index in range {
+                    selectedScreenshots.insert(screenshots[index].id)
+                }
+            }
         } else {
-            selectedScreenshots.insert(screenshot.id)
+            // Regular click: select only this one
+            selectedScreenshots = [screenshot.id]
+            lastSelectedID = screenshot.id
         }
+    }
+
+    /// Select all screenshots
+    private func selectAll() {
+        selectedScreenshots = Set(screenshots.map { $0.id })
+    }
+
+    /// Deselect all screenshots
+    private func deselectAll() {
+        selectedScreenshots.removeAll()
+        lastSelectedID = nil
     }
 
     /// Open screenshot(s) - if selected, open all selected ones
     private func openScreenshots(for screenshot: Screenshot) {
-        // Don't close popover when opening files
         if selectedScreenshots.contains(screenshot.id) && selectedScreenshots.count > 1 {
             // Open all selected screenshots
             let selectedURLs = screenshots
@@ -349,62 +381,255 @@ struct PopoverView: View {
     }
 }
 
-// MARK: - Screenshot Thumbnail View
+// MARK: - Screenshot Grid View
 
-struct ScreenshotThumbnailView: View {
-    let screenshot: Screenshot
-    let isSelected: Bool
-    let allScreenshots: [Screenshot]
-    let selectedIDs: Set<String>
+struct ScreenshotGridView: NSViewRepresentable {
+    let screenshots: [Screenshot]
+    @Binding var selectedScreenshots: Set<String>
     let enableHoverZoom: Bool
-    let onSelect: () -> Void
-    let onOpen: () -> Void
+    @Binding var lastSelectedID: String?
+    let onSelectScreenshot: (Screenshot, NSEvent.ModifierFlags) -> Void
+    let onOpenScreenshots: (Screenshot) -> Void
 
-    @AppStorage("dragMode") private var dragMode: String = "copy" // "copy" or "move"
-
-    var body: some View {
-        ThumbnailViewInternal(
-            screenshot: screenshot,
-            isSelected: isSelected,
-            enableHoverZoom: enableHoverZoom,
-            onSelect: onSelect,
-            onOpen: onOpen
-        )
-        .frame(width: 80, height: 100)
-    }
-
-}
-
-// MARK: - Thumbnail View Internal
-
-struct ThumbnailViewInternal: NSViewRepresentable {
-    let screenshot: Screenshot
-    let isSelected: Bool
-    let enableHoverZoom: Bool
-    let onSelect: () -> Void
-    let onOpen: () -> Void
-
-    func makeNSView(context: Context) -> ThumbnailNSView {
-        let view = ThumbnailNSView()
+    func makeNSView(context: Context) -> ScreenshotGridNSView {
+        let view = ScreenshotGridNSView()
         view.coordinator = context.coordinator
         return view
     }
 
-    func updateNSView(_ nsView: ThumbnailNSView, context: Context) {
-        nsView.screenshot = screenshot
-        nsView.isSelected = isSelected
+    func updateNSView(_ nsView: ScreenshotGridNSView, context: Context) {
+        nsView.screenshots = screenshots
+        nsView.selectedScreenshots = selectedScreenshots
         nsView.enableHoverZoom = enableHoverZoom
-        nsView.onSelect = onSelect
-        nsView.onOpen = onOpen
+        nsView.onSelectScreenshot = onSelectScreenshot
+        nsView.onOpenScreenshots = onOpenScreenshots
+        nsView.onDeselectAll = {
+            selectedScreenshots.removeAll()
+            lastSelectedID = nil
+        }
+        nsView.onBatchSelect = { ids in
+            selectedScreenshots = ids
+        }
         nsView.needsDisplay = true
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator()
+        Coordinator(parent: self)
     }
 
     class Coordinator {
-        var trackingArea: NSTrackingArea?
+        var parent: ScreenshotGridView
+
+        init(parent: ScreenshotGridView) {
+            self.parent = parent
+        }
+    }
+}
+
+// MARK: - Drag Selection View
+
+class DragSelectionView: NSView {
+    weak var parentScrollView: ScreenshotGridNSView?
+
+    private var selectionStartPoint: NSPoint?
+    private var selectionCurrentPoint: NSPoint?
+    private var isDraggingSelection: Bool = false
+
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+
+        // Check if we clicked on a thumbnail
+        let clickedThumbnail = subviews.first { view in
+            view is ThumbnailNSView && view.frame.contains(point)
+        }
+
+        // If we clicked on empty space, start drag selection
+        if clickedThumbnail == nil {
+            selectionStartPoint = point
+            selectionCurrentPoint = point
+            isDraggingSelection = false // Will become true in mouseDragged
+        } else {
+            // Let the thumbnail handle it
+            super.mouseDown(with: event)
+        }
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let startPoint = selectionStartPoint else {
+            super.mouseDragged(with: event)
+            return
+        }
+
+        isDraggingSelection = true
+        selectionCurrentPoint = convert(event.locationInWindow, from: nil)
+
+        // Redraw to show selection rectangle
+        needsDisplay = true
+
+        // Update selection based on current rectangle
+        updateSelectionInRect()
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        if isDraggingSelection {
+            // Finalize selection
+            updateSelectionInRect()
+        } else if selectionStartPoint != nil {
+            // Click on empty area without drag - deselect all
+            parentScrollView?.onDeselectAll?()
+        }
+
+        // Clear selection rectangle
+        selectionStartPoint = nil
+        selectionCurrentPoint = nil
+        isDraggingSelection = false
+        needsDisplay = true
+    }
+
+    private func updateSelectionInRect() {
+        guard let scrollView = parentScrollView,
+              let startPoint = selectionStartPoint,
+              let currentPoint = selectionCurrentPoint else { return }
+
+        // Calculate selection rectangle
+        let selectionRect = NSRect(
+            x: min(startPoint.x, currentPoint.x),
+            y: min(startPoint.y, currentPoint.y),
+            width: abs(currentPoint.x - startPoint.x),
+            height: abs(currentPoint.y - startPoint.y)
+        )
+
+        // Find thumbnails that intersect with selection rectangle
+        var selectedIDs = Set<String>()
+        for view in subviews {
+            guard let thumbnailView = view as? ThumbnailNSView,
+                  let screenshot = thumbnailView.screenshot else { continue }
+
+            if view.frame.intersects(selectionRect) {
+                selectedIDs.insert(screenshot.id)
+            }
+        }
+
+        // Update selection with all selected IDs
+        scrollView.onBatchSelect?(selectedIDs)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+
+        // Draw selection rectangle if dragging
+        if isDraggingSelection,
+           let startPoint = selectionStartPoint,
+           let currentPoint = selectionCurrentPoint {
+
+            let selectionRect = NSRect(
+                x: min(startPoint.x, currentPoint.x),
+                y: min(startPoint.y, currentPoint.y),
+                width: abs(currentPoint.x - startPoint.x),
+                height: abs(currentPoint.y - startPoint.y)
+            )
+
+            // Fill with semi-transparent blue
+            NSColor.systemBlue.withAlphaComponent(0.2).setFill()
+            selectionRect.fill()
+
+            // Stroke with blue border
+            NSColor.systemBlue.setStroke()
+            let borderPath = NSBezierPath(rect: selectionRect)
+            borderPath.lineWidth = 2
+            borderPath.stroke()
+        }
+    }
+}
+
+// MARK: - Screenshot Grid NSView
+
+class ScreenshotGridNSView: NSScrollView {
+    var screenshots: [Screenshot] = []
+    var selectedScreenshots: Set<String> = []
+    var enableHoverZoom: Bool = false
+    var onSelectScreenshot: ((Screenshot, NSEvent.ModifierFlags) -> Void)?
+    var onOpenScreenshots: ((Screenshot) -> Void)?
+    var onDeselectAll: (() -> Void)?
+    var onBatchSelect: ((Set<String>) -> Void)?
+    var coordinator: ScreenshotGridView.Coordinator?
+
+    private var thumbnailViews: [ThumbnailNSView] = []
+    private var contentView: DragSelectionView!
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setupScrollView()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setupScrollView()
+    }
+
+    private func setupScrollView() {
+        hasVerticalScroller = true
+        hasHorizontalScroller = false
+        autohidesScrollers = true
+        backgroundColor = .clear
+        drawsBackground = false
+
+        contentView = DragSelectionView(frame: .zero)
+        contentView.parentScrollView = self
+        documentView = contentView
+    }
+
+    override func layout() {
+        super.layout()
+        layoutThumbnails()
+    }
+
+    private func layoutThumbnails() {
+        // Clear existing views
+        thumbnailViews.forEach { $0.removeFromSuperview() }
+        thumbnailViews.removeAll()
+
+        let padding: CGFloat = 12
+        let itemWidth: CGFloat = 80
+        let itemHeight: CGFloat = 100
+        let spacing: CGFloat = 8
+        let cols = 4
+
+        var x: CGFloat = padding
+        var y: CGFloat = padding
+
+        for (index, screenshot) in screenshots.enumerated() {
+            let col = index % cols
+            let row = index / cols
+
+            x = padding + CGFloat(col) * (itemWidth + spacing)
+            y = padding + CGFloat(row) * (itemHeight + spacing)
+
+            let frame = NSRect(x: x, y: y, width: itemWidth, height: itemHeight)
+            let thumbnailView = ThumbnailNSView()
+            thumbnailView.frame = frame
+            thumbnailView.screenshot = screenshot
+            thumbnailView.isSelected = selectedScreenshots.contains(screenshot.id)
+            thumbnailView.enableHoverZoom = enableHoverZoom
+            thumbnailView.onSelect = { [weak self] modifiers in
+                self?.onSelectScreenshot?(screenshot, modifiers)
+            }
+            thumbnailView.onOpen = { [weak self] in
+                self?.onOpenScreenshots?(screenshot)
+            }
+            thumbnailView.onGetSelectedScreenshots = { [weak self] in
+                guard let self = self else { return [] }
+                return self.screenshots.filter { self.selectedScreenshots.contains($0.id) }
+            }
+
+            contentView.addSubview(thumbnailView)
+            thumbnailViews.append(thumbnailView)
+        }
+
+        // Set content size
+        let rows = (screenshots.count + cols - 1) / cols
+        let contentHeight = padding + CGFloat(rows) * (itemHeight + spacing)
+        contentView.frame = NSRect(x: 0, y: 0, width: frame.width, height: contentHeight)
     }
 }
 
@@ -414,9 +639,9 @@ class ThumbnailNSView: NSView {
     var screenshot: Screenshot?
     var isSelected: Bool = false
     var enableHoverZoom: Bool = false
-    var onSelect: (() -> Void)?
+    var onSelect: ((NSEvent.ModifierFlags) -> Void)?
     var onOpen: (() -> Void)?
-    var coordinator: ThumbnailViewInternal.Coordinator?
+    var onGetSelectedScreenshots: (() -> [Screenshot])?
 
     @AppStorage("dragMode") private var dragMode: String = "copy"
 
@@ -424,6 +649,9 @@ class ThumbnailNSView: NSView {
     private var isDragging: Bool = false
     private var mouseDownPoint: NSPoint?
     private var dragThreshold: CGFloat = 5.0 // pixels to move before considering it a drag
+    private var trackingArea: NSTrackingArea?
+    private var clickTimer: Timer?
+    private var clickCount: Int = 0
 
     private var isHovering: Bool = false {
         didSet {
@@ -463,18 +691,18 @@ class ThumbnailNSView: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
 
-        if let existing = coordinator?.trackingArea {
+        if let existing = trackingArea {
             removeTrackingArea(existing)
         }
 
-        let trackingArea = NSTrackingArea(
+        let area = NSTrackingArea(
             rect: bounds,
             options: [.mouseEnteredAndExited, .activeInKeyWindow],
             owner: self,
             userInfo: nil
         )
-        addTrackingArea(trackingArea)
-        coordinator?.trackingArea = trackingArea
+        addTrackingArea(area)
+        trackingArea = area
     }
 
     override func mouseEntered(with event: NSEvent) {
@@ -511,38 +739,57 @@ class ThumbnailNSView: NSView {
         // Mark that we're dragging
         isDragging = true
 
-        // Create drag item using NSURL (conforms to NSPasteboardWriting)
-        let fileURL = screenshot.url as NSURL
-        let item = NSDraggingItem(pasteboardWriter: fileURL)
-
-        // Set drag image - start slightly bigger than thumbnail (90px)
-        if let thumbnail = screenshot.thumbnail {
-            let dragImage = thumbnail
-
-            // Start slightly bigger than thumbnail (80x80 -> 90x90)
-            let startSize: CGFloat = 90
-            let startFrame = NSRect(
-                x: 0, y: 0,
-                width: startSize,
-                height: startSize
-            )
-
-            // Set the dragging frame
-            item.setDraggingFrame(startFrame, contents: dragImage)
-
-            // Configure to animate to destination - grows as you drag
-            item.imageComponentsProvider = {
-                let component = NSDraggingImageComponent(key: NSDraggingItem.ImageComponentKey.icon)
-                component.contents = dragImage
-                // Final size when dragging away
-                let finalSize: CGFloat = 120
-                component.frame = NSRect(x: 0, y: 0, width: finalSize, height: finalSize)
-                return [component]
-            }
+        // Check if we should drag multiple selected files
+        let screenshotsToDrag: [Screenshot]
+        if isSelected, let selectedScreenshots = onGetSelectedScreenshots?(), selectedScreenshots.count > 1 {
+            // Drag all selected screenshots
+            screenshotsToDrag = selectedScreenshots
+        } else {
+            // Drag just this one
+            screenshotsToDrag = [screenshot]
         }
 
-        // Start dragging session
-        let session = beginDraggingSession(with: [item], event: event, source: self)
+        // Create drag items for each screenshot
+        var dragItems: [NSDraggingItem] = []
+
+        for (index, screenshotToDrag) in screenshotsToDrag.enumerated() {
+            let fileURL = screenshotToDrag.url as NSURL
+            let item = NSDraggingItem(pasteboardWriter: fileURL)
+
+            // Set drag image - start slightly bigger than thumbnail (90px)
+            if let thumbnail = screenshotToDrag.thumbnail {
+                let dragImage = thumbnail
+
+                // Start slightly bigger than thumbnail (80x80 -> 90x90)
+                let startSize: CGFloat = 90
+
+                // Offset each image slightly for multi-file drag
+                let offset: CGFloat = CGFloat(index) * 4
+                let startFrame = NSRect(
+                    x: offset, y: -offset,
+                    width: startSize,
+                    height: startSize
+                )
+
+                // Set the dragging frame
+                item.setDraggingFrame(startFrame, contents: dragImage)
+
+                // Configure to animate to destination - grows as you drag
+                item.imageComponentsProvider = {
+                    let component = NSDraggingImageComponent(key: NSDraggingItem.ImageComponentKey.icon)
+                    component.contents = dragImage
+                    // Final size when dragging away
+                    let finalSize: CGFloat = 120
+                    component.frame = NSRect(x: offset, y: -offset, width: finalSize, height: finalSize)
+                    return [component]
+                }
+            }
+
+            dragItems.append(item)
+        }
+
+        // Start dragging session with all items
+        let session = beginDraggingSession(with: dragItems, event: event, source: self)
         session.animatesToStartingPositionsOnCancelOrFail = true
     }
 
@@ -553,12 +800,16 @@ class ThumbnailNSView: NSView {
             return
         }
 
-        // Check for modifier keys for selection
-        if event.modifierFlags.contains(.command) {
-            onSelect?()
-        } else {
-            // Regular click opens the screenshot(s)
+        // Handle double-click
+        if event.clickCount == 2 {
+            // Double click opens
+            clickTimer?.invalidate()
+            clickTimer = nil
+            clickCount = 0
             onOpen?()
+        } else if event.clickCount == 1 {
+            // Single click selects (with modifiers)
+            onSelect?(event.modifierFlags)
         }
 
         isDragging = false
