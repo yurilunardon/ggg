@@ -143,6 +143,18 @@ struct PopoverView: View {
                 .buttonStyle(.plain)
                 .help("Click to open folder in Finder")
 
+                // Time filter indicator
+                if !screenshots.isEmpty {
+                    Text("•")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+
+                    Text("Last \(timeFilter)min")
+                        .font(.caption2)
+                        .foregroundColor(.orange)
+                        .fontWeight(.medium)
+                }
+
                 Spacer()
 
                 // Selection controls
@@ -564,12 +576,18 @@ class DragSelectionView: NSView {
 
         isDraggingSelection = true
 
-        // Convert mouse position (clamp to bounds for drawing, but use actual for auto-scroll)
+        // Convert mouse position
         let actualPoint = convert(event.locationInWindow, from: nil)
-        selectionCurrentPoint = actualPoint
 
-        // Handle auto-scrolling when near edges
-        handleAutoScroll(at: actualPoint)
+        // Clamp to bounds for selection rectangle
+        let clampedPoint = NSPoint(
+            x: max(0, min(actualPoint.x, bounds.width)),
+            y: max(0, min(actualPoint.y, bounds.height))
+        )
+        selectionCurrentPoint = clampedPoint
+
+        // Handle auto-scrolling when near edges (use clamped point)
+        handleAutoScroll(at: clampedPoint)
 
         // Redraw to show selection rectangle
         needsDisplay = true
@@ -736,15 +754,22 @@ class ScreenshotGridNSView: NSScrollView {
 
     private var thumbnailViews: [ThumbnailNSView] = []
     private var containerView: DragSelectionView!
+    private var updateTimer: Timer?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         setupScrollView()
+        startUpdateTimer()
     }
 
     required init?(coder: NSCoder) {
         super.init(coder: coder)
         setupScrollView()
+        startUpdateTimer()
+    }
+
+    deinit {
+        updateTimer?.invalidate()
     }
 
     private func setupScrollView() {
@@ -757,6 +782,13 @@ class ScreenshotGridNSView: NSScrollView {
         containerView = DragSelectionView(frame: .zero)
         containerView.parentScrollView = self
         documentView = containerView
+    }
+
+    private func startUpdateTimer() {
+        // Update thumbnails every second to refresh expiring indicators
+        updateTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            self?.thumbnailViews.forEach { $0.needsDisplay = true }
+        }
     }
 
     override func layout() {
@@ -807,10 +839,11 @@ class ScreenshotGridNSView: NSScrollView {
             thumbnailViews.append(thumbnailView)
         }
 
-        // Set content size
+        // Set content size (ensure minimum height to cover visible area for drag selection)
         let rows = (screenshots.count + cols - 1) / cols
-        let contentHeight = padding + CGFloat(rows) * (itemHeight + spacing)
-        containerView.frame = NSRect(x: 0, y: 0, width: frame.width, height: contentHeight)
+        let calculatedHeight = padding + CGFloat(rows) * (itemHeight + spacing)
+        let minHeight = max(calculatedHeight, frame.height)
+        containerView.frame = NSRect(x: 0, y: 0, width: frame.width, height: minHeight)
     }
 }
 
@@ -1108,6 +1141,38 @@ class ThumbnailNSView: NSView {
                 NSColor.white.set()
                 clockImage?.draw(in: clockRect.insetBy(dx: 3, dy: 3))
                 NSGraphicsContext.current?.restoreGraphicsState()
+
+                // Draw countdown timer for < 30 seconds
+                if secondsRemaining <= 30 {
+                    let countdownText = "\(secondsRemaining)s"
+                    let countdownAttributes: [NSAttributedString.Key: Any] = [
+                        .font: NSFont.boldSystemFont(ofSize: 11),
+                        .foregroundColor: NSColor.white
+                    ]
+                    let countdownSize = (countdownText as NSString).size(withAttributes: countdownAttributes)
+
+                    // Draw countdown next to clock icon
+                    let countdownRect = NSRect(
+                        x: clockRect.maxX + 4,
+                        y: clockRect.minY + (clockSize - countdownSize.height) / 2,
+                        width: countdownSize.width + 8,
+                        height: countdownSize.height + 4
+                    )
+
+                    // Draw red background for countdown
+                    NSColor.systemRed.setFill()
+                    let countdownBgPath = NSBezierPath(roundedRect: countdownRect, xRadius: 4, yRadius: 4)
+                    countdownBgPath.fill()
+
+                    // Draw countdown text
+                    let textDrawRect = NSRect(
+                        x: countdownRect.minX + 4,
+                        y: countdownRect.minY + 2,
+                        width: countdownSize.width,
+                        height: countdownSize.height
+                    )
+                    (countdownText as NSString).draw(in: textDrawRect, withAttributes: countdownAttributes)
+                }
             }
         }
 
