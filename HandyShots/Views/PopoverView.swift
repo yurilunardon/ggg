@@ -112,6 +112,11 @@ struct PopoverView: View {
                     .font(.headline)
                     .fontWeight(.bold)
 
+                // Time filter indicator
+                Text("(\(timeFilter)min)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
                 Spacer()
 
                 // Status indicator
@@ -144,22 +149,6 @@ struct PopoverView: View {
                 .help("Click to open folder in Finder")
 
                 Spacer()
-
-                // Time filter indicator
-                if !screenshots.isEmpty {
-                    HStack(spacing: 3) {
-                        Image(systemName: "clock.fill")
-                            .font(.system(size: 10))
-                            .foregroundColor(.green)
-                        Text("\(timeFilter)min")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(.green)
-                    }
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(Color.green.opacity(0.1))
-                    .cornerRadius(4)
-                }
 
                 // Selection controls
                 if !screenshots.isEmpty {
@@ -815,7 +804,7 @@ class ScreenshotGridNSView: NSScrollView {
         thumbnailViews.forEach { $0.removeFromSuperview() }
         thumbnailViews.removeAll()
 
-        let padding: CGFloat = 12
+        let padding: CGFloat = 16
         let itemWidth: CGFloat = 80
         let itemHeight: CGFloat = 100
         let spacing: CGFloat = 8
@@ -1134,34 +1123,34 @@ class ThumbnailNSView: NSView {
             // Draw expiring indicator if screenshot is about to disappear (<= 30 seconds)
             let secondsRemaining = secondsUntilExpiration(for: screenshot)
             if secondsRemaining <= 30 {
-                let countdownText = "\(secondsRemaining)s"
+                let countdownText = "\(secondsRemaining)"
                 let countdownAttributes: [NSAttributedString.Key: Any] = [
-                    .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
+                    .font: NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .bold),
                     .foregroundColor: NSColor.white
                 ]
                 let countdownSize = (countdownText as NSString).size(withAttributes: countdownAttributes)
 
-                // Combined badge with clock icon and countdown
-                let iconSize: CGFloat = 16
-                let badgeWidth = iconSize + countdownSize.width + 12
-                let badgeHeight: CGFloat = 22
+                // Compact badge
+                let iconSize: CGFloat = 11
+                let badgeWidth = iconSize + countdownSize.width + 8
+                let badgeHeight: CGFloat = 16
 
                 let badgeRect = NSRect(
-                    x: imageRect.minX + 4,
-                    y: imageRect.maxY - badgeHeight - 4,
+                    x: imageRect.minX + 3,
+                    y: imageRect.maxY - badgeHeight - 3,
                     width: badgeWidth,
                     height: badgeHeight
                 )
 
-                // Draw rounded red background
+                // Draw rounded red background with slight transparency
                 NSGraphicsContext.current?.saveGraphicsState()
-                NSColor.systemRed.setFill()
-                let badgePath = NSBezierPath(roundedRect: badgeRect, xRadius: 11, yRadius: 11)
+                NSColor.systemRed.withAlphaComponent(0.95).setFill()
+                let badgePath = NSBezierPath(roundedRect: badgeRect, xRadius: 8, yRadius: 8)
                 badgePath.fill()
 
                 // Draw clock icon
                 let clockRect = NSRect(
-                    x: badgeRect.minX + 4,
+                    x: badgeRect.minX + 3,
                     y: badgeRect.minY + (badgeHeight - iconSize) / 2,
                     width: iconSize,
                     height: iconSize
@@ -1174,7 +1163,7 @@ class ThumbnailNSView: NSView {
                 // Draw countdown text
                 let textRect = NSRect(
                     x: clockRect.maxX + 2,
-                    y: badgeRect.minY + (badgeHeight - countdownSize.height) / 2,
+                    y: badgeRect.minY + (badgeHeight - countdownSize.height) / 2 - 0.5,
                     width: countdownSize.width,
                     height: countdownSize.height
                 )
