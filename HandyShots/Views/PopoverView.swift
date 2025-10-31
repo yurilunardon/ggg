@@ -136,22 +136,49 @@ struct PopoverView: View {
 
                 Spacer()
 
-                // Selection buttons
+                // Selection controls
                 if !screenshots.isEmpty {
-                    Button(action: { selectAll() }) {
-                        Text("Select All")
-                            .font(.caption2)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Select all screenshots (Cmd+A)")
-
-                    if !selectedScreenshots.isEmpty {
-                        Button(action: { deselectAll() }) {
-                            Text("Deselect")
-                                .font(.caption2)
+                    if selectedScreenshots.isEmpty {
+                        // Select All button when nothing selected
+                        Button(action: { selectAll() }) {
+                            HStack(spacing: 3) {
+                                Image(systemName: "checkmark.circle")
+                                    .font(.system(size: 11))
+                                Text("All")
+                                    .font(.system(size: 10, weight: .medium))
+                            }
+                            .foregroundColor(.blue)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Color.blue.opacity(0.1))
+                            .cornerRadius(4)
                         }
                         .buttonStyle(.plain)
-                        .help("Deselect all")
+                        .help("Select all (⌘A)")
+                    } else {
+                        // Selection badge when items are selected
+                        HStack(spacing: 6) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.white)
+                                Text("\(selectedScreenshots.count)")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundColor(.white)
+                            }
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Color.blue)
+                            .cornerRadius(4)
+
+                            Button(action: { deselectAll() }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Deselect all")
+                        }
                     }
                 }
 
@@ -174,7 +201,7 @@ struct PopoverView: View {
     // MARK: - Screenshot Grid
 
     private var screenshotGrid: some View {
-        ScrollView {
+        Group {
             if screenshots.isEmpty {
                 // Empty state
                 VStack(spacing: 12) {
