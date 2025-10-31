@@ -180,6 +180,7 @@ struct PopoverView: View {
                             .padding(.vertical, 3)
                             .background(Color.blue)
                             .cornerRadius(4)
+                            .help("\(selectedScreenshots.count) screenshot\(selectedScreenshots.count == 1 ? "" : "s") selected")
 
                             // Deselect All button
                             Button(action: { deselectAll() }) {
@@ -213,6 +214,7 @@ struct PopoverView: View {
                             .padding(.vertical, 3)
                             .background(Color.blue)
                             .cornerRadius(4)
+                            .help("\(selectedScreenshots.count) screenshot\(selectedScreenshots.count == 1 ? "" : "s") selected")
 
                             Button(action: { deselectAll() }) {
                                 Image(systemName: "xmark.circle.fill")
@@ -269,6 +271,7 @@ struct PopoverView: View {
                     screenshots: screenshots,
                     selectedScreenshots: $selectedScreenshots,
                     enableHoverZoom: enableHoverZoom,
+                    timeFilterMinutes: timeFilter,
                     lastSelectedID: $lastSelectedID,
                     onSelectScreenshot: { screenshot, modifiers in
                         handleSelection(screenshot: screenshot, modifiers: modifiers)
@@ -468,6 +471,7 @@ struct ScreenshotGridView: NSViewRepresentable {
     let screenshots: [Screenshot]
     @Binding var selectedScreenshots: Set<String>
     let enableHoverZoom: Bool
+    let timeFilterMinutes: Int
     @Binding var lastSelectedID: String?
     let onSelectScreenshot: (Screenshot, NSEvent.ModifierFlags) -> Void
     let onOpenScreenshots: (Screenshot) -> Void
@@ -482,6 +486,7 @@ struct ScreenshotGridView: NSViewRepresentable {
         nsView.screenshots = screenshots
         nsView.selectedScreenshots = selectedScreenshots
         nsView.enableHoverZoom = enableHoverZoom
+        nsView.timeFilterMinutes = timeFilterMinutes
         nsView.onSelectScreenshot = onSelectScreenshot
         nsView.onOpenScreenshots = onOpenScreenshots
         nsView.onDeselectAll = {
@@ -558,10 +563,13 @@ class DragSelectionView: NSView {
         }
 
         isDraggingSelection = true
-        selectionCurrentPoint = convert(event.locationInWindow, from: nil)
+
+        // Convert mouse position (clamp to bounds for drawing, but use actual for auto-scroll)
+        let actualPoint = convert(event.locationInWindow, from: nil)
+        selectionCurrentPoint = actualPoint
 
         // Handle auto-scrolling when near edges
-        handleAutoScroll(at: selectionCurrentPoint)
+        handleAutoScroll(at: actualPoint)
 
         // Redraw to show selection rectangle
         needsDisplay = true
@@ -616,7 +624,9 @@ class DragSelectionView: NSView {
         }
         // Scroll down if near bottom
         else if visibleRect.maxY - point.y < scrollThreshold {
-            let maxY = frame.height - visibleRect.height
+            // Calculate maximum scroll position (content height - visible height)
+            let contentHeight = scrollView.documentView?.frame.height ?? 0
+            let maxY = max(0, contentHeight - visibleRect.height)
             newOrigin.y = min(maxY, newOrigin.y + scrollSpeed)
         }
 
@@ -717,6 +727,7 @@ class ScreenshotGridNSView: NSScrollView {
     var screenshots: [Screenshot] = []
     var selectedScreenshots: Set<String> = []
     var enableHoverZoom: Bool = false
+    var timeFilterMinutes: Int = 10
     var onSelectScreenshot: ((Screenshot, NSEvent.ModifierFlags) -> Void)?
     var onOpenScreenshots: ((Screenshot) -> Void)?
     var onDeselectAll: (() -> Void)?
@@ -780,6 +791,7 @@ class ScreenshotGridNSView: NSScrollView {
             thumbnailView.screenshot = screenshot
             thumbnailView.isSelected = selectedScreenshots.contains(screenshot.id)
             thumbnailView.enableHoverZoom = enableHoverZoom
+            thumbnailView.timeFilterMinutes = timeFilterMinutes
             thumbnailView.onSelect = { [weak self] modifiers in
                 self?.onSelectScreenshot?(screenshot, modifiers)
             }
@@ -811,6 +823,7 @@ class ThumbnailNSView: NSView {
     var onSelect: ((NSEvent.ModifierFlags) -> Void)?
     var onOpen: (() -> Void)?
     var onGetSelectedScreenshots: (() -> [Screenshot])?
+    var timeFilterMinutes: Int = 10 // Time filter from settings
 
     @AppStorage("dragMode") private var dragMode: String = "copy"
 
@@ -1070,6 +1083,32 @@ class ThumbnailNSView: NSView {
                 borderPath.lineWidth = 1
                 borderPath.stroke()
             }
+
+            // Draw expiring indicator if screenshot is about to disappear
+            let secondsRemaining = secondsUntilExpiration(for: screenshot)
+            if secondsRemaining <= 60 {
+                let clockSize: CGFloat = 20
+                let clockRect = NSRect(
+                    x: imageRect.minX + 4,
+                    y: imageRect.maxY - clockSize - 4,
+                    width: clockSize,
+                    height: clockSize
+                )
+
+                // Draw red circle background
+                NSColor.systemRed.setFill()
+                let circlePath = NSBezierPath(ovalIn: clockRect)
+                circlePath.fill()
+
+                // Draw clock icon
+                let clockImage = NSImage(systemSymbolName: "clock.fill", accessibilityDescription: nil)
+                clockImage?.isTemplate = true
+
+                NSGraphicsContext.current?.saveGraphicsState()
+                NSColor.white.set()
+                clockImage?.draw(in: clockRect.insetBy(dx: 3, dy: 3))
+                NSGraphicsContext.current?.restoreGraphicsState()
+            }
         }
 
         // Draw time ago text
@@ -1086,6 +1125,28 @@ class ThumbnailNSView: NSView {
             height: textSize.height
         )
         (timeText as NSString).draw(in: centeredTextRect, withAttributes: textAttributes)
+
+        // Update tooltip for expiring screenshots
+        if let screenshot = screenshot {
+            let secondsRemaining = secondsUntilExpiration(for: screenshot)
+            if secondsRemaining <= 60 {
+                let minutes = secondsRemaining / 60
+                let seconds = secondsRemaining % 60
+                if minutes > 0 {
+                    self.toolTip = "⏰ This screenshot will disappear in \(minutes)m \(seconds)s"
+                } else {
+                    self.toolTip = "⏰ This screenshot will disappear in \(seconds)s"
+                }
+            } else {
+                self.toolTip = nil
+            }
+        }
+    }
+
+    private func secondsUntilExpiration(for screenshot: Screenshot) -> Int {
+        let expirationDate = screenshot.createdDate.addingTimeInterval(Double(timeFilterMinutes * 60))
+        let remaining = expirationDate.timeIntervalSince(Date())
+        return max(0, Int(remaining))
     }
 
     private func timeAgo(from date: Date) -> String {
