@@ -143,19 +143,23 @@ struct PopoverView: View {
                 .buttonStyle(.plain)
                 .help("Click to open folder in Finder")
 
+                Spacer()
+
                 // Time filter indicator
                 if !screenshots.isEmpty {
-                    Text("•")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-
-                    Text("Last \(timeFilter)min")
-                        .font(.caption2)
-                        .foregroundColor(.orange)
-                        .fontWeight(.medium)
+                    HStack(spacing: 3) {
+                        Image(systemName: "clock.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(.green)
+                        Text("\(timeFilter)min")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.green)
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color.green.opacity(0.1))
+                    .cornerRadius(4)
                 }
-
-                Spacer()
 
                 // Selection controls
                 if !screenshots.isEmpty {
@@ -176,8 +180,33 @@ struct PopoverView: View {
                         }
                         .buttonStyle(.plain)
                         .help("Select all (⌘A)")
-                    } else if selectedScreenshots.count == screenshots.count {
-                        // All selected - show Deselect All button with counter
+                    } else if selectedScreenshots.count == 1 {
+                        // Single item selected - show counter badge and X icon
+                        HStack(spacing: 6) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.white)
+                                Text("1")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundColor(.white)
+                            }
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Color.blue)
+                            .cornerRadius(4)
+                            .help("1 screenshot selected")
+
+                            Button(action: { deselectAll() }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Deselect")
+                        }
+                    } else {
+                        // 2+ selected - show Deselect All button with counter
                         HStack(spacing: 6) {
                             // Counter badge
                             HStack(spacing: 4) {
@@ -192,7 +221,7 @@ struct PopoverView: View {
                             .padding(.vertical, 3)
                             .background(Color.blue)
                             .cornerRadius(4)
-                            .help("\(selectedScreenshots.count) screenshot\(selectedScreenshots.count == 1 ? "" : "s") selected")
+                            .help("\(selectedScreenshots.count) screenshots selected")
 
                             // Deselect All button
                             Button(action: { deselectAll() }) {
@@ -207,31 +236,6 @@ struct PopoverView: View {
                                 .padding(.vertical, 3)
                                 .background(Color.secondary.opacity(0.1))
                                 .cornerRadius(4)
-                            }
-                            .buttonStyle(.plain)
-                            .help("Deselect all")
-                        }
-                    } else {
-                        // Some selected - show counter badge and X button
-                        HStack(spacing: 6) {
-                            HStack(spacing: 4) {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .font(.system(size: 10))
-                                    .foregroundColor(.white)
-                                Text("\(selectedScreenshots.count)")
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .foregroundColor(.white)
-                            }
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 3)
-                            .background(Color.blue)
-                            .cornerRadius(4)
-                            .help("\(selectedScreenshots.count) screenshot\(selectedScreenshots.count == 1 ? "" : "s") selected")
-
-                            Button(action: { deselectAll() }) {
-                                Image(systemName: "xmark.circle.fill")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(.secondary)
                             }
                             .buttonStyle(.plain)
                             .help("Deselect all")
@@ -719,11 +723,21 @@ class DragSelectionView: NSView {
            let startPoint = selectionStartPoint,
            let currentPoint = selectionCurrentPoint {
 
+            // Clamp both points to ensure rectangle stays within bounds
+            let clampedStart = NSPoint(
+                x: max(0, min(startPoint.x, bounds.width)),
+                y: max(0, min(startPoint.y, bounds.height))
+            )
+            let clampedCurrent = NSPoint(
+                x: max(0, min(currentPoint.x, bounds.width)),
+                y: max(0, min(currentPoint.y, bounds.height))
+            )
+
             let selectionRect = NSRect(
-                x: min(startPoint.x, currentPoint.x),
-                y: min(startPoint.y, currentPoint.y),
-                width: abs(currentPoint.x - startPoint.x),
-                height: abs(currentPoint.y - startPoint.y)
+                x: min(clampedStart.x, clampedCurrent.x),
+                y: min(clampedStart.y, clampedCurrent.y),
+                width: abs(clampedCurrent.x - clampedStart.x),
+                height: abs(clampedCurrent.y - clampedStart.y)
             )
 
             // Fill with semi-transparent blue
@@ -1117,62 +1131,56 @@ class ThumbnailNSView: NSView {
                 borderPath.stroke()
             }
 
-            // Draw expiring indicator if screenshot is about to disappear
+            // Draw expiring indicator if screenshot is about to disappear (<= 30 seconds)
             let secondsRemaining = secondsUntilExpiration(for: screenshot)
-            if secondsRemaining <= 60 {
-                let clockSize: CGFloat = 20
-                let clockRect = NSRect(
+            if secondsRemaining <= 30 {
+                let countdownText = "\(secondsRemaining)s"
+                let countdownAttributes: [NSAttributedString.Key: Any] = [
+                    .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
+                    .foregroundColor: NSColor.white
+                ]
+                let countdownSize = (countdownText as NSString).size(withAttributes: countdownAttributes)
+
+                // Combined badge with clock icon and countdown
+                let iconSize: CGFloat = 16
+                let badgeWidth = iconSize + countdownSize.width + 12
+                let badgeHeight: CGFloat = 22
+
+                let badgeRect = NSRect(
                     x: imageRect.minX + 4,
-                    y: imageRect.maxY - clockSize - 4,
-                    width: clockSize,
-                    height: clockSize
+                    y: imageRect.maxY - badgeHeight - 4,
+                    width: badgeWidth,
+                    height: badgeHeight
                 )
 
-                // Draw red circle background
+                // Draw rounded red background
+                NSGraphicsContext.current?.saveGraphicsState()
                 NSColor.systemRed.setFill()
-                let circlePath = NSBezierPath(ovalIn: clockRect)
-                circlePath.fill()
+                let badgePath = NSBezierPath(roundedRect: badgeRect, xRadius: 11, yRadius: 11)
+                badgePath.fill()
 
                 // Draw clock icon
+                let clockRect = NSRect(
+                    x: badgeRect.minX + 4,
+                    y: badgeRect.minY + (badgeHeight - iconSize) / 2,
+                    width: iconSize,
+                    height: iconSize
+                )
                 let clockImage = NSImage(systemSymbolName: "clock.fill", accessibilityDescription: nil)
                 clockImage?.isTemplate = true
-
-                NSGraphicsContext.current?.saveGraphicsState()
                 NSColor.white.set()
-                clockImage?.draw(in: clockRect.insetBy(dx: 3, dy: 3))
+                clockImage?.draw(in: clockRect)
+
+                // Draw countdown text
+                let textRect = NSRect(
+                    x: clockRect.maxX + 2,
+                    y: badgeRect.minY + (badgeHeight - countdownSize.height) / 2,
+                    width: countdownSize.width,
+                    height: countdownSize.height
+                )
+                (countdownText as NSString).draw(in: textRect, withAttributes: countdownAttributes)
+
                 NSGraphicsContext.current?.restoreGraphicsState()
-
-                // Draw countdown timer for < 30 seconds
-                if secondsRemaining <= 30 {
-                    let countdownText = "\(secondsRemaining)s"
-                    let countdownAttributes: [NSAttributedString.Key: Any] = [
-                        .font: NSFont.boldSystemFont(ofSize: 11),
-                        .foregroundColor: NSColor.white
-                    ]
-                    let countdownSize = (countdownText as NSString).size(withAttributes: countdownAttributes)
-
-                    // Draw countdown next to clock icon
-                    let countdownRect = NSRect(
-                        x: clockRect.maxX + 4,
-                        y: clockRect.minY + (clockSize - countdownSize.height) / 2,
-                        width: countdownSize.width + 8,
-                        height: countdownSize.height + 4
-                    )
-
-                    // Draw red background for countdown
-                    NSColor.systemRed.setFill()
-                    let countdownBgPath = NSBezierPath(roundedRect: countdownRect, xRadius: 4, yRadius: 4)
-                    countdownBgPath.fill()
-
-                    // Draw countdown text
-                    let textDrawRect = NSRect(
-                        x: countdownRect.minX + 4,
-                        y: countdownRect.minY + 2,
-                        width: countdownSize.width,
-                        height: countdownSize.height
-                    )
-                    (countdownText as NSString).draw(in: textDrawRect, withAttributes: countdownAttributes)
-                }
             }
         }
 
@@ -1194,12 +1202,10 @@ class ThumbnailNSView: NSView {
         // Update tooltip for expiring screenshots
         let secondsRemaining = secondsUntilExpiration(for: screenshot)
         if secondsRemaining <= 60 {
-            let minutes = secondsRemaining / 60
-            let seconds = secondsRemaining % 60
-            if minutes > 0 {
-                self.toolTip = "⏰ This screenshot will disappear in \(minutes)m \(seconds)s"
+            if secondsRemaining <= 30 {
+                self.toolTip = "🔴 Expiring in \(secondsRemaining) seconds!"
             } else {
-                self.toolTip = "⏰ This screenshot will disappear in \(seconds)s"
+                self.toolTip = "⏰ Less than 1 minute remaining"
             }
         } else {
             self.toolTip = nil
