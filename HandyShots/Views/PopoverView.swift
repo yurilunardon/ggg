@@ -1127,19 +1127,17 @@ class ThumbnailNSView: NSView {
         (timeText as NSString).draw(in: centeredTextRect, withAttributes: textAttributes)
 
         // Update tooltip for expiring screenshots
-        if let screenshot = screenshot {
-            let secondsRemaining = secondsUntilExpiration(for: screenshot)
-            if secondsRemaining <= 60 {
-                let minutes = secondsRemaining / 60
-                let seconds = secondsRemaining % 60
-                if minutes > 0 {
-                    self.toolTip = "⏰ This screenshot will disappear in \(minutes)m \(seconds)s"
-                } else {
-                    self.toolTip = "⏰ This screenshot will disappear in \(seconds)s"
-                }
+        let secondsRemaining = secondsUntilExpiration(for: screenshot)
+        if secondsRemaining <= 60 {
+            let minutes = secondsRemaining / 60
+            let seconds = secondsRemaining % 60
+            if minutes > 0 {
+                self.toolTip = "⏰ This screenshot will disappear in \(minutes)m \(seconds)s"
             } else {
-                self.toolTip = nil
+                self.toolTip = "⏰ This screenshot will disappear in \(seconds)s"
             }
+        } else {
+            self.toolTip = nil
         }
     }
 
