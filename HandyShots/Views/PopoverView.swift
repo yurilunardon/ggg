@@ -33,6 +33,9 @@ struct PopoverView: View {
     /// Delete mode: hideFromView or deleteFromDisk
     @AppStorage("deleteMode") private var deleteMode: String = "hideFromView"
 
+    /// Hidden screenshot IDs (for hideFromView mode)
+    @AppStorage("hiddenScreenshotIDs") private var hiddenScreenshotIDsData: Data = Data()
+
     // MARK: - State Properties
 
     /// Show splash screen on first open
@@ -40,6 +43,9 @@ struct PopoverView: View {
 
     /// List of recent screenshots
     @State private var screenshots: [Screenshot] = []
+
+    /// Set of hidden screenshot IDs
+    @State private var hiddenScreenshotIDs: Set<String> = []
 
     /// Timer for refreshing screenshots
     @State private var refreshTimer: Timer?
@@ -49,6 +55,10 @@ struct PopoverView: View {
 
     /// Last clicked screenshot for shift+click range selection
     @State private var lastSelectedID: String?
+
+    /// Pending deletion confirmation state
+    @State private var showDeleteConfirmation: Bool = false
+    @State private var pendingDeletion: [Screenshot] = []
 
     // MARK: - Body
 
@@ -76,22 +86,31 @@ struct PopoverView: View {
     // MARK: - Main Interface
 
     private var mainInterface: some View {
-        VStack(spacing: 0) {
-            // Compact Header with folder info
-            compactHeader
+        ZStack {
+            VStack(spacing: 0) {
+                // Compact Header with folder info
+                compactHeader
 
-            Divider()
+                Divider()
 
-            // Notification banner (if folder changed)
-            if let message = folderMonitor.folderChangeMessage {
-                notificationBanner(message: message)
-                    .animation(.spring(response: 0.4, dampingFraction: 0.8), value: folderMonitor.folderChangeMessage)
+                // Notification banner (if folder changed)
+                if let message = folderMonitor.folderChangeMessage {
+                    notificationBanner(message: message)
+                        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: folderMonitor.folderChangeMessage)
+                }
+
+                // Screenshot grid
+                screenshotGrid
             }
 
-            // Screenshot grid
-            screenshotGrid
+            // Delete confirmation overlay
+            if showDeleteConfirmation {
+                deleteConfirmationView
+                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+            }
         }
         .onAppear {
+            loadHiddenScreenshotIDs()
             refreshScreenshots()
             startRefreshTimer()
         }
@@ -132,16 +151,16 @@ struct PopoverView: View {
 
                 Spacer()
 
-                // Change folder button
+                // Settings gear button
                 Button(action: {
-                    changeFolderAction()
+                    openSettings()
                 }) {
-                    Image(systemName: "folder")
+                    Image(systemName: "gearshape")
                         .font(.system(size: 14))
                         .foregroundColor(.secondary)
                 }
                 .buttonStyle(.plain)
-                .help("Change screenshot folder")
+                .help("Open Settings")
             }
 
             // Monitored folder row
@@ -348,6 +367,87 @@ struct PopoverView: View {
 
     // MARK: - Helper Views
 
+    /// Delete confirmation view (in-app instead of popup)
+    private var deleteConfirmationView: some View {
+        ZStack {
+            // Semi-transparent background
+            Color.black.opacity(0.3)
+                .edgesIgnoringSafeArea(.all)
+                .onTapGesture {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        showDeleteConfirmation = false
+                        pendingDeletion = []
+                    }
+                }
+
+            // Confirmation card
+            VStack(spacing: 16) {
+                // Icon and title
+                VStack(spacing: 8) {
+                    Image(systemName: deleteMode == "deleteFromDisk" ? "trash.fill" : "eye.slash.fill")
+                        .font(.system(size: 36))
+                        .foregroundColor(deleteMode == "deleteFromDisk" ? .red : .orange)
+
+                    Text(deleteMode == "deleteFromDisk" ? "Delete Screenshots?" : "Hide Screenshots?")
+                        .font(.headline)
+                        .fontWeight(.bold)
+
+                    Text(deleteMode == "deleteFromDisk" ?
+                         "Permanently delete \(pendingDeletion.count) screenshot\(pendingDeletion.count == 1 ? "" : "s")? This cannot be undone." :
+                         "Hide \(pendingDeletion.count) screenshot\(pendingDeletion.count == 1 ? "" : "s") from view? Files will remain on disk.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                // Buttons
+                HStack(spacing: 12) {
+                    // Cancel button
+                    Button(action: {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            showDeleteConfirmation = false
+                            pendingDeletion = []
+                        }
+                    }) {
+                        Text("Cancel")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .background(Color.secondary.opacity(0.1))
+                            .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
+                    .keyboardShortcut(.cancelAction)
+
+                    // Confirm button
+                    Button(action: {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            showDeleteConfirmation = false
+                            confirmDeletion()
+                        }
+                    }) {
+                        Text(deleteMode == "deleteFromDisk" ? "Delete" : "Hide")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .background(deleteMode == "deleteFromDisk" ? Color.red : Color.orange)
+                            .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
+                    .keyboardShortcut(.defaultAction) // Enter key
+                }
+            }
+            .padding(20)
+            .frame(width: 320)
+            .background(Color(NSColor.windowBackgroundColor))
+            .cornerRadius(12)
+            .shadow(color: Color.black.opacity(0.3), radius: 20, x: 0, y: 10)
+        }
+    }
+
     /// Notification banner for folder changes
     private func notificationBanner(message: String) -> some View {
         HStack(spacing: 10) {
@@ -447,64 +547,59 @@ struct PopoverView: View {
     private func deleteSelectedScreenshots() {
         guard !selectedScreenshots.isEmpty else { return }
 
-        // Get the selected screenshot objects
-        let screenshotsToDelete = screenshots.filter { selectedScreenshots.contains($0.id) }
+        // Get the selected screenshot objects and show confirmation
+        pendingDeletion = screenshots.filter { selectedScreenshots.contains($0.id) }
+
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            showDeleteConfirmation = true
+        }
+    }
+
+    /// Confirm and execute deletion after user confirmation
+    private func confirmDeletion() {
+        guard !pendingDeletion.isEmpty else { return }
 
         if deleteMode == "deleteFromDisk" {
-            // Show confirmation dialog for permanent deletion
-            let alert = NSAlert()
-            alert.messageText = "Delete Screenshots from Disk?"
-            alert.informativeText = "Are you sure you want to permanently delete \(screenshotsToDelete.count) screenshot\(screenshotsToDelete.count == 1 ? "" : "s")? This cannot be undone."
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: "Delete")
-            alert.addButton(withTitle: "Cancel")
+            // Delete files from disk
+            let fileManager = FileManager.default
+            var deletedCount = 0
 
-            // Make Delete button red
-            if let deleteButton = alert.buttons.first {
-                deleteButton.hasDestructiveAction = true
-            }
-
-            let response = alert.runModal()
-
-            if response == .alertFirstButtonReturn {
-                // User confirmed - delete files from disk
-                let fileManager = FileManager.default
-                var deletedCount = 0
-
-                for screenshot in screenshotsToDelete {
-                    do {
-                        try fileManager.removeItem(at: screenshot.url)
-                        deletedCount += 1
-                        print("✅ Deleted file: \(screenshot.url.lastPathComponent)")
-                    } catch {
-                        print("❌ Failed to delete file: \(screenshot.url.lastPathComponent) - \(error.localizedDescription)")
-                        // Show error alert
-                        let errorAlert = NSAlert()
-                        errorAlert.messageText = "Delete Failed"
-                        errorAlert.informativeText = "Could not delete \(screenshot.url.lastPathComponent): \(error.localizedDescription)"
-                        errorAlert.alertStyle = .warning
-                        errorAlert.runModal()
-                    }
+            for screenshot in pendingDeletion {
+                do {
+                    try fileManager.removeItem(at: screenshot.url)
+                    deletedCount += 1
+                    print("✅ Deleted file: \(screenshot.url.lastPathComponent)")
+                } catch {
+                    print("❌ Failed to delete file: \(screenshot.url.lastPathComponent) - \(error.localizedDescription)")
+                    // Show error alert
+                    let errorAlert = NSAlert()
+                    errorAlert.messageText = "Delete Failed"
+                    errorAlert.informativeText = "Could not delete \(screenshot.url.lastPathComponent): \(error.localizedDescription)"
+                    errorAlert.alertStyle = .warning
+                    errorAlert.runModal()
                 }
-
-                print("🗑️ Deleted \(deletedCount) of \(screenshotsToDelete.count) files from disk")
-            } else {
-                // User cancelled - do nothing
-                return
             }
+
+            print("🗑️ Deleted \(deletedCount) of \(pendingDeletion.count) files from disk")
         } else {
-            // "hideFromView" mode - just remove from display without deleting files
-            print("👁️ Hiding \(screenshotsToDelete.count) screenshot(s) from view (files remain on disk)")
+            // "hideFromView" mode - add IDs to hidden list without deleting files
+            for screenshot in pendingDeletion {
+                hiddenScreenshotIDs.insert(screenshot.id)
+            }
+            saveHiddenScreenshotIDs()
+            print("👁️ Hiding \(pendingDeletion.count) screenshot(s) from view (files remain on disk)")
         }
 
         // Remove deleted/hidden screenshots from the display list
+        let idsToRemove = Set(pendingDeletion.map { $0.id })
         screenshots.removeAll { screenshot in
-            selectedScreenshots.contains(screenshot.id)
+            idsToRemove.contains(screenshot.id)
         }
 
-        // Clear selection
+        // Clear selection and pending
         selectedScreenshots.removeAll()
         lastSelectedID = nil
+        pendingDeletion = []
 
         // Refresh to ensure consistency
         refreshScreenshots()
@@ -527,34 +622,42 @@ struct PopoverView: View {
         }
     }
 
-    /// Open folder picker to change screenshot folder
-    private func changeFolderAction() {
-        let panel = NSOpenPanel()
-        panel.title = "Choose Screenshot Folder"
-        panel.message = "Select the folder where your screenshots are saved"
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.canCreateDirectories = false
-
-        // Set initial directory
-        if !folderMonitor.currentFolder.isEmpty, let url = URL(string: "file://\(folderMonitor.currentFolder)") {
-            panel.directoryURL = url
-        }
-
-        // Show panel
-        panel.begin { [weak folderMonitor] response in
-            if response == .OK, let url = panel.url {
-                let path = url.path
-                folderMonitor?.updateFolder(path: path)
-                FolderDetector.saveFolder(path: path)
-
-                print("✅ Screenshot folder changed to: \(path)")
-            }
+    /// Open Settings window
+    private func openSettings() {
+        // Try to find and activate existing settings window
+        if let window = NSApp.windows.first(where: { $0.title == "Settings" }) {
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        } else {
+            // Create new settings window
+            let settingsView = SettingsView()
+                .environmentObject(folderMonitor)
+            let hostingController = NSHostingController(rootView: settingsView)
+            let window = NSWindow(contentViewController: hostingController)
+            window.title = "Settings"
+            window.styleMask = [.titled, .closable]
+            window.setContentSize(NSSize(width: 500, height: 600))
+            window.center()
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
         }
     }
 
     // MARK: - Screenshot Management
+
+    /// Load hidden screenshot IDs from persistent storage
+    private func loadHiddenScreenshotIDs() {
+        if let decoded = try? JSONDecoder().decode(Set<String>.self, from: hiddenScreenshotIDsData) {
+            hiddenScreenshotIDs = decoded
+        }
+    }
+
+    /// Save hidden screenshot IDs to persistent storage
+    private func saveHiddenScreenshotIDs() {
+        if let encoded = try? JSONEncoder().encode(hiddenScreenshotIDs) {
+            hiddenScreenshotIDsData = encoded
+        }
+    }
 
     /// Refresh the list of screenshots
     private func refreshScreenshots() {
@@ -565,7 +668,8 @@ struct PopoverView: View {
             let scanned = ScreenshotScanner.scanFolder(path: folder, withinMinutes: minutes)
 
             DispatchQueue.main.async {
-                self.screenshots = scanned
+                // Filter out hidden screenshots
+                self.screenshots = scanned.filter { !self.hiddenScreenshotIDs.contains($0.id) }
             }
         }
     }
@@ -641,6 +745,9 @@ class DragSelectionView: NSView {
     private var isDraggingSelection: Bool = false
     private var autoScrollTimer: Timer?
 
+    /// Bounds of the actual grid content (where thumbnails are)
+    var gridBounds: NSRect = .zero
+
     // Flip coordinate system so origin is top-left
     override var isFlipped: Bool {
         return true
@@ -686,10 +793,10 @@ class DragSelectionView: NSView {
         // Convert mouse position
         let actualPoint = convert(event.locationInWindow, from: nil)
 
-        // Clamp to bounds for selection rectangle
+        // Clamp to grid bounds (where thumbnails actually are)
         let clampedPoint = NSPoint(
-            x: max(0, min(actualPoint.x, bounds.width)),
-            y: max(0, min(actualPoint.y, bounds.height))
+            x: max(gridBounds.minX, min(actualPoint.x, gridBounds.maxX)),
+            y: max(gridBounds.minY, min(actualPoint.y, gridBounds.maxY))
         )
         selectionCurrentPoint = clampedPoint
 
@@ -826,14 +933,14 @@ class DragSelectionView: NSView {
            let startPoint = selectionStartPoint,
            let currentPoint = selectionCurrentPoint {
 
-            // Clamp both points to ensure rectangle stays within bounds
+            // Clamp both points to grid bounds
             let clampedStart = NSPoint(
-                x: max(0, min(startPoint.x, bounds.width)),
-                y: max(0, min(startPoint.y, bounds.height))
+                x: max(gridBounds.minX, min(startPoint.x, gridBounds.maxX)),
+                y: max(gridBounds.minY, min(startPoint.y, gridBounds.maxY))
             )
             let clampedCurrent = NSPoint(
-                x: max(0, min(currentPoint.x, bounds.width)),
-                y: max(0, min(currentPoint.y, bounds.height))
+                x: max(gridBounds.minX, min(currentPoint.x, gridBounds.maxX)),
+                y: max(gridBounds.minY, min(currentPoint.y, gridBounds.maxY))
             )
 
             let selectionRect = NSRect(
@@ -918,7 +1025,7 @@ class ScreenshotGridNSView: NSScrollView {
         thumbnailViews.forEach { $0.removeFromSuperview() }
         thumbnailViews.removeAll()
 
-        let padding: CGFloat = 4
+        let padding: CGFloat = 16
         let itemWidth: CGFloat = 80
         let itemHeight: CGFloat = 100
         let spacing: CGFloat = 8
@@ -961,6 +1068,11 @@ class ScreenshotGridNSView: NSScrollView {
         let calculatedHeight = padding + CGFloat(rows) * (itemHeight + spacing)
         let minHeight = max(calculatedHeight, frame.height)
         containerView.frame = NSRect(x: 0, y: 0, width: frame.width, height: minHeight)
+
+        // Calculate grid bounds (where thumbnails actually are)
+        let gridWidth = padding * 2 + CGFloat(cols) * itemWidth + CGFloat(cols - 1) * spacing
+        let gridHeight = padding + CGFloat(rows) * (itemHeight + spacing)
+        containerView.gridBounds = NSRect(x: 0, y: 0, width: gridWidth, height: gridHeight)
     }
 }
 
