@@ -10,6 +10,11 @@ import SwiftUI
 
 /// Settings window for configuring app preferences
 struct SettingsView: View {
+    // MARK: - Environment Objects
+
+    /// Folder monitor for tracking screenshot folder changes
+    @EnvironmentObject var folderMonitor: FolderMonitor
+
     // MARK: - AppStorage Properties
 
     /// Time filter in minutes (5-60 range)
@@ -36,6 +41,11 @@ struct SettingsView: View {
             // Settings content
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
+                    // Monitored folder setting
+                    monitoredFolderSection
+
+                    Divider()
+
                     // Time filter setting
                     timeFilterSection
 
@@ -81,6 +91,90 @@ struct SettingsView: View {
         }
         .padding()
         .background(Color.gray.opacity(0.05))
+    }
+
+    // MARK: - Monitored Folder Section
+
+    private var monitoredFolderSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "folder.fill")
+                    .foregroundColor(.blue)
+
+                Text("Screenshot Folder")
+                    .font(.headline)
+            }
+
+            Text("Choose which folder to monitor for screenshots")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+
+            // Current folder display
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Current Folder:")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fontWeight(.medium)
+
+                HStack {
+                    Text(folderMonitor.currentFolder)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(.primary)
+                        .lineLimit(2)
+                        .truncationMode(.middle)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.gray.opacity(0.1))
+                        .cornerRadius(6)
+                }
+            }
+
+            // Change folder button
+            Button(action: {
+                changeFolderAction()
+            }) {
+                HStack {
+                    Image(systemName: "folder.badge.gearshape")
+                        .font(.system(size: 14))
+                    Text("Change Folder...")
+                        .font(.system(size: 13, weight: .medium))
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(Color.blue)
+                .cornerRadius(8)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    /// Open folder picker to change screenshot folder
+    private func changeFolderAction() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose Screenshot Folder"
+        panel.message = "Select the folder where your screenshots are saved"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = false
+
+        // Set initial directory
+        if !folderMonitor.currentFolder.isEmpty, let url = URL(string: "file://\(folderMonitor.currentFolder)") {
+            panel.directoryURL = url
+        }
+
+        // Show panel
+        panel.begin { [weak folderMonitor] response in
+            if response == .OK, let url = panel.url {
+                let path = url.path
+                folderMonitor?.updateFolder(path: path)
+                FolderDetector.saveFolder(path: path)
+
+                print("✅ Screenshot folder changed to: \(path)")
+            }
+        }
     }
 
     // MARK: - Time Filter Section
