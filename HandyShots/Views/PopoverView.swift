@@ -455,7 +455,7 @@ class DragSelectionView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard let startPoint = selectionStartPoint else {
+        guard selectionStartPoint != nil else {
             super.mouseDragged(with: event)
             return
         }
@@ -555,7 +555,7 @@ class ScreenshotGridNSView: NSScrollView {
     var coordinator: ScreenshotGridView.Coordinator?
 
     private var thumbnailViews: [ThumbnailNSView] = []
-    private var contentView: DragSelectionView!
+    private var containerView: DragSelectionView!
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -574,9 +574,9 @@ class ScreenshotGridNSView: NSScrollView {
         backgroundColor = .clear
         drawsBackground = false
 
-        contentView = DragSelectionView(frame: .zero)
-        contentView.parentScrollView = self
-        documentView = contentView
+        containerView = DragSelectionView(frame: .zero)
+        containerView.parentScrollView = self
+        documentView = containerView
     }
 
     override func layout() {
@@ -622,14 +622,14 @@ class ScreenshotGridNSView: NSScrollView {
                 return self.screenshots.filter { self.selectedScreenshots.contains($0.id) }
             }
 
-            contentView.addSubview(thumbnailView)
+            containerView.addSubview(thumbnailView)
             thumbnailViews.append(thumbnailView)
         }
 
         // Set content size
         let rows = (screenshots.count + cols - 1) / cols
         let contentHeight = padding + CGFloat(rows) * (itemHeight + spacing)
-        contentView.frame = NSRect(x: 0, y: 0, width: frame.width, height: contentHeight)
+        containerView.frame = NSRect(x: 0, y: 0, width: frame.width, height: contentHeight)
     }
 }
 
