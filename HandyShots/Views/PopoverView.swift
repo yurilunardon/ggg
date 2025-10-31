@@ -379,15 +379,17 @@ class ThumbnailNSView: NSView {
     var onSelect: (() -> Void)?
     var coordinator: ThumbnailViewInternal.Coordinator?
 
+    @AppStorage("dragMode") private var dragMode: String = "copy"
+
     private var previewTimer: Timer?
     private var isDragging: Bool = false
 
     private var isHovering: Bool = false {
         didSet {
             if isHovering && enableHoverZoom {
-                // Start timer to show preview after 4 seconds
+                // Start timer to show preview after 3 seconds
                 previewTimer?.invalidate()
-                previewTimer = Timer.scheduledTimer(withTimeInterval: 4.0, repeats: false) { [weak self] _ in
+                previewTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { [weak self] _ in
                     self?.showPreview()
                 }
             } else {
@@ -462,19 +464,35 @@ class ThumbnailNSView: NSView {
         let fileURL = screenshot.url as NSURL
         let item = NSDraggingItem(pasteboardWriter: fileURL)
 
-        // Set drag image
+        // Set drag image - start small, will grow as it moves
         if let thumbnail = screenshot.thumbnail {
             let dragImage = thumbnail
-            let draggingFrame = NSRect(
+
+            // Start with small size (40x40) that will animate to full size
+            let smallSize: CGFloat = 40
+            let startFrame = NSRect(
                 x: 0, y: 0,
-                width: dragImage.size.width,
-                height: dragImage.size.height
+                width: smallSize,
+                height: smallSize
             )
-            item.setDraggingFrame(draggingFrame, contents: dragImage)
+
+            // Set the dragging frame to start small
+            item.setDraggingFrame(startFrame, contents: dragImage)
+
+            // Configure to animate to destination - this makes it grow as you drag
+            item.imageComponentsProvider = {
+                let component = NSDraggingImageComponent(key: NSDraggingItem.ImageComponentKey.icon)
+                component.contents = dragImage
+                // Final size when dragging away
+                let finalSize: CGFloat = 120
+                component.frame = NSRect(x: 0, y: 0, width: finalSize, height: finalSize)
+                return [component]
+            }
         }
 
         // Start dragging session
-        beginDraggingSession(with: [item], event: event, source: self)
+        let session = beginDraggingSession(with: [item], event: event, source: self)
+        session.animatesToStartingPositionsOnCancelOrFail = true
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -603,7 +621,17 @@ class ThumbnailNSView: NSView {
 
 extension ThumbnailNSView: NSDraggingSource {
     func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
-        return [.copy, .move]
+        // Return operation based on user setting
+        if dragMode == "move" {
+            return .move
+        } else {
+            return .copy
+        }
+    }
+
+    func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
+        // If move operation completed, we could delete the file here
+        // For now, macOS will handle it automatically
     }
 }
 
