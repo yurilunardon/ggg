@@ -30,6 +30,9 @@ struct PopoverView: View {
     /// Enable hover zoom preview
     @AppStorage("enableHoverZoom") private var enableHoverZoom: Bool = false
 
+    /// Delete mode: hideFromView or deleteFromDisk
+    @AppStorage("deleteMode") private var deleteMode: String = "hideFromView"
+
     // MARK: - State Properties
 
     /// Show splash screen on first open
@@ -125,6 +128,7 @@ struct PopoverView: View {
                 .padding(.vertical, 3)
                 .background(Color.green.opacity(0.1))
                 .cornerRadius(4)
+                .help("Showing screenshots from the last \(timeFilter) minutes")
 
                 Spacer()
 
@@ -167,9 +171,16 @@ struct PopoverView: View {
                 // Selection controls - always reserve space to prevent header resize
                 Group {
                     if screenshots.isEmpty {
-                        // Invisible placeholder to maintain height
-                        Color.clear
-                            .frame(width: 1, height: 24)
+                        // Invisible placeholder to maintain height (same size as Select All button)
+                        HStack(spacing: 3) {
+                            Image(systemName: "checkmark.circle")
+                                .font(.system(size: 11))
+                            Text("Select All")
+                                .font(.system(size: 10, weight: .medium))
+                        }
+                        .foregroundColor(.clear)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
                     } else if selectedScreenshots.isEmpty {
                         // Select All button when nothing selected
                         Button(action: { selectAll() }) {
@@ -188,7 +199,7 @@ struct PopoverView: View {
                         .buttonStyle(.plain)
                         .help("Select all (⌘A)")
                     } else if selectedScreenshots.count == 1 {
-                        // Single item selected - show counter badge and X icon
+                        // Single item selected - show counter badge, trash, and X icon
                         HStack(spacing: 6) {
                             HStack(spacing: 4) {
                                 Image(systemName: "checkmark.circle.fill")
@@ -204,6 +215,15 @@ struct PopoverView: View {
                             .cornerRadius(4)
                             .help("1 screenshot selected")
 
+                            // Trash button
+                            Button(action: { deleteSelectedScreenshots() }) {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.red)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Delete (⌫)")
+
                             Button(action: { deselectAll() }) {
                                 Image(systemName: "xmark.circle.fill")
                                     .font(.system(size: 11))
@@ -213,7 +233,7 @@ struct PopoverView: View {
                             .help("Deselect")
                         }
                     } else {
-                        // 2+ selected - show Deselect All button with counter
+                        // 2+ selected - show counter, trash, and Deselect All button
                         HStack(spacing: 6) {
                             // Counter badge
                             HStack(spacing: 4) {
@@ -229,6 +249,15 @@ struct PopoverView: View {
                             .background(Color.blue)
                             .cornerRadius(4)
                             .help("\(selectedScreenshots.count) screenshots selected")
+
+                            // Trash button
+                            Button(action: { deleteSelectedScreenshots() }) {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.red)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Delete \(selectedScreenshots.count) screenshots (⌫)")
 
                             // Deselect All button
                             Button(action: { deselectAll() }) {
@@ -296,10 +325,20 @@ struct PopoverView: View {
                 .onAppear {
                     // Setup keyboard shortcuts
                     NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                        // Cmd+A: Select all
                         if event.modifierFlags.contains(.command) && event.charactersIgnoringModifiers == "a" {
                             selectAll()
                             return nil // consume event
                         }
+
+                        // Delete or Backspace: Delete selected screenshots
+                        if event.keyCode == 51 || event.keyCode == 117 { // 51 = Delete, 117 = Forward Delete
+                            if !selectedScreenshots.isEmpty {
+                                deleteSelectedScreenshots()
+                                return nil // consume event
+                            }
+                        }
+
                         return event
                     }
                 }
@@ -402,6 +441,73 @@ struct PopoverView: View {
     private func deselectAll() {
         selectedScreenshots.removeAll()
         lastSelectedID = nil
+    }
+
+    /// Delete selected screenshots based on deleteMode setting
+    private func deleteSelectedScreenshots() {
+        guard !selectedScreenshots.isEmpty else { return }
+
+        // Get the selected screenshot objects
+        let screenshotsToDelete = screenshots.filter { selectedScreenshots.contains($0.id) }
+
+        if deleteMode == "deleteFromDisk" {
+            // Show confirmation dialog for permanent deletion
+            let alert = NSAlert()
+            alert.messageText = "Delete Screenshots from Disk?"
+            alert.informativeText = "Are you sure you want to permanently delete \(screenshotsToDelete.count) screenshot\(screenshotsToDelete.count == 1 ? "" : "s")? This cannot be undone."
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "Delete")
+            alert.addButton(withTitle: "Cancel")
+
+            // Make Delete button red
+            if let deleteButton = alert.buttons.first {
+                deleteButton.hasDestructiveAction = true
+            }
+
+            let response = alert.runModal()
+
+            if response == .alertFirstButtonReturn {
+                // User confirmed - delete files from disk
+                let fileManager = FileManager.default
+                var deletedCount = 0
+
+                for screenshot in screenshotsToDelete {
+                    do {
+                        try fileManager.removeItem(at: screenshot.url)
+                        deletedCount += 1
+                        print("✅ Deleted file: \(screenshot.url.lastPathComponent)")
+                    } catch {
+                        print("❌ Failed to delete file: \(screenshot.url.lastPathComponent) - \(error.localizedDescription)")
+                        // Show error alert
+                        let errorAlert = NSAlert()
+                        errorAlert.messageText = "Delete Failed"
+                        errorAlert.informativeText = "Could not delete \(screenshot.url.lastPathComponent): \(error.localizedDescription)"
+                        errorAlert.alertStyle = .warning
+                        errorAlert.runModal()
+                    }
+                }
+
+                print("🗑️ Deleted \(deletedCount) of \(screenshotsToDelete.count) files from disk")
+            } else {
+                // User cancelled - do nothing
+                return
+            }
+        } else {
+            // "hideFromView" mode - just remove from display without deleting files
+            print("👁️ Hiding \(screenshotsToDelete.count) screenshot(s) from view (files remain on disk)")
+        }
+
+        // Remove deleted/hidden screenshots from the display list
+        screenshots.removeAll { screenshot in
+            selectedScreenshots.contains(screenshot.id)
+        }
+
+        // Clear selection
+        selectedScreenshots.removeAll()
+        lastSelectedID = nil
+
+        // Refresh to ensure consistency
+        refreshScreenshots()
     }
 
     /// Open screenshot(s) - if selected, open all selected ones
@@ -812,7 +918,7 @@ class ScreenshotGridNSView: NSScrollView {
         thumbnailViews.forEach { $0.removeFromSuperview() }
         thumbnailViews.removeAll()
 
-        let padding: CGFloat = 8
+        let padding: CGFloat = 4
         let itemWidth: CGFloat = 80
         let itemHeight: CGFloat = 100
         let spacing: CGFloat = 8
@@ -1133,37 +1239,50 @@ class ThumbnailNSView: NSView {
             if secondsRemaining <= 30 {
                 let countdownText = "\(secondsRemaining)"
                 let countdownAttributes: [NSAttributedString.Key: Any] = [
-                    .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .heavy),
+                    .font: NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .heavy),
                     .foregroundColor: NSColor.white
                 ]
+                let countdownSize = (countdownText as NSString).size(withAttributes: countdownAttributes)
 
-                // Circular badge design
-                let badgeSize: CGFloat = 24
+                // Pill-shaped badge with clock icon and countdown
+                let iconSize: CGFloat = 13
+                let badgeWidth = iconSize + countdownSize.width + 14
+                let badgeHeight: CGFloat = 20
+
                 let badgeRect = NSRect(
-                    x: imageRect.maxX - badgeSize - 4,
-                    y: imageRect.minY + 4,
-                    width: badgeSize,
-                    height: badgeSize
+                    x: imageRect.maxX - badgeWidth - 3,
+                    y: imageRect.minY + 3,
+                    width: badgeWidth,
+                    height: badgeHeight
                 )
 
                 NSGraphicsContext.current?.saveGraphicsState()
 
-                // Draw white border circle
+                // Draw red pill background with white border
+                let outerPath = NSBezierPath(roundedRect: badgeRect, xRadius: badgeHeight / 2, yRadius: badgeHeight / 2)
                 NSColor.white.setFill()
-                let borderCircle = NSBezierPath(ovalIn: badgeRect)
-                borderCircle.fill()
+                outerPath.fill()
 
-                // Draw inner red circle
-                let innerRect = badgeRect.insetBy(dx: 2, dy: 2)
+                let innerPath = NSBezierPath(roundedRect: badgeRect.insetBy(dx: 1.5, dy: 1.5), xRadius: (badgeHeight - 3) / 2, yRadius: (badgeHeight - 3) / 2)
                 NSColor.systemRed.setFill()
-                let innerCircle = NSBezierPath(ovalIn: innerRect)
-                innerCircle.fill()
+                innerPath.fill()
 
-                // Draw countdown text centered
-                let countdownSize = (countdownText as NSString).size(withAttributes: countdownAttributes)
+                // Draw clock icon
+                let clockRect = NSRect(
+                    x: badgeRect.minX + 4,
+                    y: badgeRect.minY + (badgeHeight - iconSize) / 2,
+                    width: iconSize,
+                    height: iconSize
+                )
+                let clockImage = NSImage(systemSymbolName: "clock.fill", accessibilityDescription: nil)
+                clockImage?.isTemplate = true
+                NSColor.white.set()
+                clockImage?.draw(in: clockRect)
+
+                // Draw countdown text
                 let textRect = NSRect(
-                    x: badgeRect.midX - countdownSize.width / 2,
-                    y: badgeRect.midY - countdownSize.height / 2 + 1,
+                    x: clockRect.maxX + 1,
+                    y: badgeRect.minY + (badgeHeight - countdownSize.height) / 2,
                     width: countdownSize.width,
                     height: countdownSize.height
                 )
