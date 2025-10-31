@@ -21,6 +21,9 @@ struct SettingsView: View {
     /// Enable hover zoom preview
     @AppStorage("enableHoverZoom") private var enableHoverZoom: Bool = false
 
+    /// Delete mode: hideFromView or deleteFromDisk
+    @AppStorage("deleteMode") private var deleteMode: String = "hideFromView"
+
     // MARK: - Body
 
     var body: some View {
@@ -45,6 +48,11 @@ struct SettingsView: View {
 
                     // Hover Zoom setting
                     hoverZoomSection
+
+                    Divider()
+
+                    // Delete Mode setting
+                    deleteModeSection
 
                     Divider()
 
@@ -240,6 +248,78 @@ struct SettingsView: View {
             .padding(12)
             .background(enableHoverZoom ? Color.green.opacity(0.1) : Color.gray.opacity(0.05))
             .cornerRadius(8)
+        }
+    }
+
+    // MARK: - Delete Mode Section
+
+    private var deleteModeSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "trash.fill")
+                    .foregroundColor(.red)
+
+                Text("Screenshot Deletion")
+                    .font(.headline)
+            }
+
+            Text("Choose what happens when you delete screenshots")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+
+            VStack(spacing: 12) {
+                // Hide from view option
+                Button(action: {
+                    deleteMode = "hideFromView"
+                }) {
+                    HStack {
+                        Image(systemName: deleteMode == "hideFromView" ? "checkmark.circle.fill" : "circle")
+                            .foregroundColor(deleteMode == "hideFromView" ? .blue : .gray)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Hide from View")
+                                .font(.body)
+                                .fontWeight(deleteMode == "hideFromView" ? .semibold : .regular)
+
+                            Text("Remove from list, keep file in folder")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+
+                        Spacer()
+                    }
+                    .padding(12)
+                    .background(deleteMode == "hideFromView" ? Color.blue.opacity(0.1) : Color.gray.opacity(0.05))
+                    .cornerRadius(8)
+                }
+                .buttonStyle(.plain)
+
+                // Delete from disk option
+                Button(action: {
+                    deleteMode = "deleteFromDisk"
+                }) {
+                    HStack {
+                        Image(systemName: deleteMode == "deleteFromDisk" ? "checkmark.circle.fill" : "circle")
+                            .foregroundColor(deleteMode == "deleteFromDisk" ? .blue : .gray)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Delete from Disk")
+                                .font(.body)
+                                .fontWeight(deleteMode == "deleteFromDisk" ? .semibold : .regular)
+
+                            Text("Permanently delete file from folder")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+
+                        Spacer()
+                    }
+                    .padding(12)
+                    .background(deleteMode == "deleteFromDisk" ? Color.blue.opacity(0.1) : Color.gray.opacity(0.05))
+                    .cornerRadius(8)
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 
