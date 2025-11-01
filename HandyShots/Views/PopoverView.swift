@@ -160,6 +160,23 @@ struct PopoverView: View {
                 .cornerRadius(4)
                 .help("Showing screenshots from the last \(timeFilter) minutes")
 
+                // Selection counter (when items selected)
+                if !selectedScreenshots.isEmpty {
+                    HStack(spacing: 3) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(.white)
+                        Text("\(selectedScreenshots.count)")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color.blue)
+                    .cornerRadius(4)
+                    .help("\(selectedScreenshots.count) screenshot\(selectedScreenshots.count == 1 ? "" : "s") selected")
+                }
+
                 Spacer()
 
                 // Settings gear button
@@ -174,46 +191,27 @@ struct PopoverView: View {
                 .help("Open Settings")
             }
 
-            // Monitored folder row with selection counter
+            // Monitored folder row
             HStack(spacing: 8) {
-                // Left side: Monitored folder + counter
-                HStack(spacing: 6) {
-                    Text("Monitored:")
+                Text("Monitored:")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .fontWeight(.medium)
+
+                Button(action: {
+                    // Open folder in Finder
+                    let url = URL(fileURLWithPath: folderMonitor.currentFolder)
+                    NSWorkspace.shared.open(url)
+                }) {
+                    // Show only folder name, not full path
+                    Text(URL(fileURLWithPath: folderMonitor.currentFolder).lastPathComponent)
                         .font(.caption2)
-                        .foregroundColor(.secondary)
-                        .fontWeight(.medium)
-
-                    Button(action: {
-                        // Open folder in Finder
-                        let url = URL(fileURLWithPath: folderMonitor.currentFolder)
-                        NSWorkspace.shared.open(url)
-                    }) {
-                        // Show only folder name, not full path
-                        Text(URL(fileURLWithPath: folderMonitor.currentFolder).lastPathComponent)
-                            .font(.caption2)
-                            .foregroundColor(.blue)
-                            .lineLimit(1)
-                            .underline()
-                    }
-                    .buttonStyle(.plain)
-                    .help(folderMonitor.currentFolder) // Full path in tooltip
-
-                    // Selection counter (when items selected)
-                    if !selectedScreenshots.isEmpty {
-                        HStack(spacing: 4) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 9))
-                                .foregroundColor(.white)
-                            Text("\(selectedScreenshots.count)")
-                                .font(.system(size: 9, weight: .semibold))
-                                .foregroundColor(.white)
-                        }
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background(Color.blue)
-                        .cornerRadius(3)
-                    }
+                        .foregroundColor(.blue)
+                        .lineLimit(1)
+                        .underline()
                 }
+                .buttonStyle(.plain)
+                .help(folderMonitor.currentFolder) // Full path in tooltip
 
                 Spacer()
 
@@ -1454,34 +1452,35 @@ class ThumbnailNSView: NSView {
                 borderPath.stroke()
             }
 
-            // Always show checkbox (styled like red clock badge)
-            let checkboxSize: CGFloat = 22
+            // Always show checkbox (smaller, square with rounded corners)
+            let checkboxSize: CGFloat = 18
             let checkboxRect = NSRect(
-                x: imageRect.minX + 6,
-                y: imageRect.maxY - checkboxSize - 6,
+                x: imageRect.minX + 5,
+                y: imageRect.maxY - checkboxSize - 5,
                 width: checkboxSize,
                 height: checkboxSize
             )
 
             NSGraphicsContext.current?.saveGraphicsState()
 
-            // Draw checkbox circle with fill
-            let circlePath = NSBezierPath(ovalIn: checkboxRect)
+            // Draw checkbox rounded square with fill
+            let cornerRadius: CGFloat = 4
+            let squarePath = NSBezierPath(roundedRect: checkboxRect, xRadius: cornerRadius, yRadius: cornerRadius)
             if isSelected {
                 NSColor.systemBlue.setFill()
             } else {
                 NSColor.white.withAlphaComponent(0.5).setFill()
             }
-            circlePath.fill()
+            squarePath.fill()
 
             // Draw white border
             NSColor.white.setStroke()
-            circlePath.lineWidth = 2
-            circlePath.stroke()
+            squarePath.lineWidth = 2
+            squarePath.stroke()
 
             // Draw checkmark icon if selected
             if isSelected {
-                let iconSize: CGFloat = 14
+                let iconSize: CGFloat = 11
                 let iconRect = NSRect(
                     x: checkboxRect.midX - iconSize / 2,
                     y: checkboxRect.midY - iconSize / 2,
@@ -1498,11 +1497,12 @@ class ThumbnailNSView: NSView {
 
             // Draw expiring indicator with circular progress (<= 30 seconds)
             let secondsRemaining = secondsUntilExpiration(for: screenshot)
-            if secondsRemaining <= 30 {
-                let badgeSize: CGFloat = 32
+            if secondsRemaining <= 30 && secondsRemaining > 0 {
+                let badgeSize: CGFloat = 36
+                // Position half outside, half inside the image on top-right edge
                 let badgeRect = NSRect(
-                    x: imageRect.maxX - badgeSize - 6,
-                    y: imageRect.minY + 6,
+                    x: imageRect.maxX - (badgeSize / 2),
+                    y: imageRect.maxY - (badgeSize / 2),
                     width: badgeSize,
                     height: badgeSize
                 )
@@ -1525,15 +1525,10 @@ class ThumbnailNSView: NSView {
                     progressColor = NSColor.systemRed
                 }
 
-                // Draw background circle (light gray)
-                let bgCircle = NSBezierPath(ovalIn: badgeRect.insetBy(dx: 3, dy: 3))
-                NSColor.white.withAlphaComponent(0.3).setFill()
-                bgCircle.fill()
-
-                // Draw progress arc (from top, clockwise)
+                // Draw progress arc (from top, clockwise) - no background fill
                 let center = NSPoint(x: badgeRect.midX, y: badgeRect.midY)
-                let radius = (badgeRect.width - 6) / 2
-                let lineWidth: CGFloat = 3
+                let radius = (badgeRect.width - 8) / 2
+                let lineWidth: CGFloat = 4
 
                 // Start angle at top (90 degrees), sweep clockwise
                 let startAngle: CGFloat = 90
@@ -1552,26 +1547,26 @@ class ThumbnailNSView: NSView {
                 progressArc.lineCapStyle = .round
                 progressArc.stroke()
 
-                // Draw white border around the arc
-                let borderArc = NSBezierPath()
-                borderArc.appendArc(
-                    withCenter: center,
-                    radius: radius + 1,
-                    startAngle: 0,
-                    endAngle: 360,
-                    clockwise: false
-                )
-                NSColor.white.setStroke()
-                borderArc.lineWidth = 1
-                borderArc.stroke()
-
-                // Draw countdown text in center (Xs format)
+                // Draw countdown text in center (Xs format) - NOT bold
                 let countdownText = "\(secondsRemaining)s"
                 let textAttributes: [NSAttributedString.Key: Any] = [
-                    .font: NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .heavy),
+                    .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular),
                     .foregroundColor: progressColor
                 ]
                 let textSize = (countdownText as NSString).size(withAttributes: textAttributes)
+
+                // Draw white background behind text for contrast
+                let textPadding: CGFloat = 3
+                let textBgRect = NSRect(
+                    x: center.x - textSize.width / 2 - textPadding,
+                    y: center.y - textSize.height / 2 - textPadding,
+                    width: textSize.width + textPadding * 2,
+                    height: textSize.height + textPadding * 2
+                )
+                let textBgPath = NSBezierPath(roundedRect: textBgRect, xRadius: 3, yRadius: 3)
+                NSColor.white.withAlphaComponent(0.9).setFill()
+                textBgPath.fill()
+
                 let textRect = NSRect(
                     x: center.x - textSize.width / 2,
                     y: center.y - textSize.height / 2,
@@ -1579,6 +1574,38 @@ class ThumbnailNSView: NSView {
                     height: textSize.height
                 )
                 (countdownText as NSString).draw(in: textRect, withAttributes: textAttributes)
+
+                NSGraphicsContext.current?.restoreGraphicsState()
+            } else if secondsRemaining == 0 {
+                // Show waving hand when countdown finishes
+                let emojiSize: CGFloat = 40
+                let emojiRect = NSRect(
+                    x: imageRect.maxX - emojiSize - 8,
+                    y: imageRect.maxY - emojiSize - 8,
+                    width: emojiSize,
+                    height: emojiSize
+                )
+
+                NSGraphicsContext.current?.saveGraphicsState()
+
+                // Draw white background circle
+                let bgCircle = NSBezierPath(ovalIn: emojiRect)
+                NSColor.white.withAlphaComponent(0.95).setFill()
+                bgCircle.fill()
+
+                // Draw waving hand emoji
+                let waveEmoji = "👋"
+                let emojiAttributes: [NSAttributedString.Key: Any] = [
+                    .font: NSFont.systemFont(ofSize: 28)
+                ]
+                let emojiSize = (waveEmoji as NSString).size(withAttributes: emojiAttributes)
+                let emojiTextRect = NSRect(
+                    x: emojiRect.midX - emojiSize.width / 2,
+                    y: emojiRect.midY - emojiSize.height / 2,
+                    width: emojiSize.width,
+                    height: emojiSize.height
+                )
+                (waveEmoji as NSString).draw(in: emojiTextRect, withAttributes: emojiAttributes)
 
                 NSGraphicsContext.current?.restoreGraphicsState()
             }
