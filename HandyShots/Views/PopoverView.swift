@@ -217,66 +217,53 @@ struct PopoverView: View {
 
                 Spacer()
 
-                // Right side: Selection controls (fixed size to prevent resize)
+                // Right side: Selection controls (always visible, disabled when needed)
                 HStack(spacing: 6) {
-                    if screenshots.isEmpty {
-                        // Empty placeholder matching controls size
-                        HStack(spacing: 6) {
-                            // Placeholder for Select All
-                            Color.clear
-                                .frame(width: 67, height: 24)
-
-                            // Placeholder for Deselect All
-                            Color.clear
-                                .frame(width: 85, height: 24)
+                    // Select All button
+                    Button(action: { selectAll() }) {
+                        HStack(spacing: 3) {
+                            Image(systemName: "checkmark.circle")
+                                .font(.system(size: 11))
+                            Text("Select All")
+                                .font(.system(size: 10, weight: .medium))
                         }
-                    } else {
-                        // Select All button (always visible)
-                        Button(action: { selectAll() }) {
-                            HStack(spacing: 3) {
-                                Image(systemName: "checkmark.circle")
-                                    .font(.system(size: 11))
-                                Text("Select All")
-                                    .font(.system(size: 10, weight: .medium))
-                            }
-                            .foregroundColor(.blue)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 3)
-                            .background(Color.blue.opacity(0.1))
-                            .cornerRadius(4)
-                        }
-                        .buttonStyle(.plain)
-                        .help("Select all (⌘A)")
-
-                        // Deselect All button (disabled if nothing selected)
-                        Button(action: { deselectAll() }) {
-                            HStack(spacing: 3) {
-                                Image(systemName: "xmark.circle")
-                                    .font(.system(size: 11))
-                                Text("Deselect All")
-                                    .font(.system(size: 10, weight: .medium))
-                            }
-                            .foregroundColor(selectedScreenshots.isEmpty ? .gray.opacity(0.5) : .secondary)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 3)
-                            .background(selectedScreenshots.isEmpty ? Color.clear : Color.secondary.opacity(0.1))
-                            .cornerRadius(4)
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(selectedScreenshots.isEmpty)
-                        .help(selectedScreenshots.isEmpty ? "No items selected" : "Deselect all")
-
-                        // Trash button (only when items selected)
-                        if !selectedScreenshots.isEmpty {
-                            Button(action: { deleteSelectedScreenshots() }) {
-                                Image(systemName: "trash")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(.red)
-                            }
-                            .buttonStyle(.plain)
-                            .help("Delete \(selectedScreenshots.count) screenshot\(selectedScreenshots.count == 1 ? "" : "s") (⌫)")
-                        }
+                        .foregroundColor(screenshots.isEmpty ? .gray.opacity(0.5) : .blue)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(screenshots.isEmpty ? Color.clear : Color.blue.opacity(0.1))
+                        .cornerRadius(4)
                     }
+                    .buttonStyle(.plain)
+                    .disabled(screenshots.isEmpty)
+                    .help(screenshots.isEmpty ? "No screenshots" : "Select all (⌘A)")
+
+                    // Deselect All button
+                    Button(action: { deselectAll() }) {
+                        HStack(spacing: 3) {
+                            Image(systemName: "xmark.circle")
+                                .font(.system(size: 11))
+                            Text("Deselect All")
+                                .font(.system(size: 10, weight: .medium))
+                        }
+                        .foregroundColor(selectedScreenshots.isEmpty ? .gray.opacity(0.5) : .secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(selectedScreenshots.isEmpty ? Color.clear : Color.secondary.opacity(0.1))
+                        .cornerRadius(4)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(selectedScreenshots.isEmpty)
+                    .help(selectedScreenshots.isEmpty ? "No items selected" : "Deselect all")
+
+                    // Trash button
+                    Button(action: { deleteSelectedScreenshots() }) {
+                        Image(systemName: "trash")
+                            .font(.system(size: 11))
+                            .foregroundColor(selectedScreenshots.isEmpty ? .gray.opacity(0.3) : .red)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(selectedScreenshots.isEmpty)
+                    .help(selectedScreenshots.isEmpty ? "No items selected" : "Delete \(selectedScreenshots.count) screenshot\(selectedScreenshots.count == 1 ? "" : "s") (⌫)")
                 }
             }
         }
@@ -1509,43 +1496,89 @@ class ThumbnailNSView: NSView {
 
             NSGraphicsContext.current?.restoreGraphicsState()
 
-            // Draw expiring indicator if screenshot is about to disappear (<= 30 seconds)
+            // Draw expiring indicator with circular progress (<= 30 seconds)
             let secondsRemaining = secondsUntilExpiration(for: screenshot)
             if secondsRemaining <= 30 {
-                // Simple red clock badge (similar to green time filter badge)
-                let iconSize: CGFloat = 18
-                let badgeSize: CGFloat = 24
-
+                let badgeSize: CGFloat = 32
                 let badgeRect = NSRect(
-                    x: imageRect.maxX - badgeSize - 4,
-                    y: imageRect.minY + 4,
+                    x: imageRect.maxX - badgeSize - 6,
+                    y: imageRect.minY + 6,
                     width: badgeSize,
                     height: badgeSize
                 )
 
                 NSGraphicsContext.current?.saveGraphicsState()
 
-                // Draw circular background with red fill
-                let circlePath = NSBezierPath(ovalIn: badgeRect)
-                NSColor.systemRed.setFill()
-                circlePath.fill()
+                // Calculate progress (0.0 to 1.0, where 1.0 is full circle at 30s)
+                let progress = CGFloat(secondsRemaining) / 30.0
 
-                // Draw white border
-                NSColor.white.setStroke()
-                circlePath.lineWidth = 2
-                circlePath.stroke()
+                // Determine color based on remaining time
+                let progressColor: NSColor
+                if secondsRemaining > 20 {
+                    // Yellow (30-20s)
+                    progressColor = NSColor.systemYellow
+                } else if secondsRemaining > 10 {
+                    // Orange (20-10s)
+                    progressColor = NSColor.systemOrange
+                } else {
+                    // Red (10-0s)
+                    progressColor = NSColor.systemRed
+                }
 
-                // Draw white clock icon centered
-                let clockRect = NSRect(
-                    x: badgeRect.midX - iconSize / 2,
-                    y: badgeRect.midY - iconSize / 2,
-                    width: iconSize,
-                    height: iconSize
+                // Draw background circle (light gray)
+                let bgCircle = NSBezierPath(ovalIn: badgeRect.insetBy(dx: 3, dy: 3))
+                NSColor.white.withAlphaComponent(0.3).setFill()
+                bgCircle.fill()
+
+                // Draw progress arc (from top, clockwise)
+                let center = NSPoint(x: badgeRect.midX, y: badgeRect.midY)
+                let radius = (badgeRect.width - 6) / 2
+                let lineWidth: CGFloat = 3
+
+                // Start angle at top (90 degrees), sweep clockwise
+                let startAngle: CGFloat = 90
+                let endAngle = startAngle - (360 * progress)
+
+                let progressArc = NSBezierPath()
+                progressArc.appendArc(
+                    withCenter: center,
+                    radius: radius,
+                    startAngle: startAngle,
+                    endAngle: endAngle,
+                    clockwise: true
                 )
-                let clockImage = NSImage(systemSymbolName: "clock.fill", accessibilityDescription: nil)
-                clockImage?.isTemplate = true
-                NSColor.white.set()
-                clockImage?.draw(in: clockRect)
+                progressColor.setStroke()
+                progressArc.lineWidth = lineWidth
+                progressArc.lineCapStyle = .round
+                progressArc.stroke()
+
+                // Draw white border around the arc
+                let borderArc = NSBezierPath()
+                borderArc.appendArc(
+                    withCenter: center,
+                    radius: radius + 1,
+                    startAngle: 0,
+                    endAngle: 360,
+                    clockwise: false
+                )
+                NSColor.white.setStroke()
+                borderArc.lineWidth = 1
+                borderArc.stroke()
+
+                // Draw countdown text in center (Xs format)
+                let countdownText = "\(secondsRemaining)s"
+                let textAttributes: [NSAttributedString.Key: Any] = [
+                    .font: NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .heavy),
+                    .foregroundColor: progressColor
+                ]
+                let textSize = (countdownText as NSString).size(withAttributes: textAttributes)
+                let textRect = NSRect(
+                    x: center.x - textSize.width / 2,
+                    y: center.y - textSize.height / 2,
+                    width: textSize.width,
+                    height: textSize.height
+                )
+                (countdownText as NSString).draw(in: textRect, withAttributes: textAttributes)
 
                 NSGraphicsContext.current?.restoreGraphicsState()
             }
