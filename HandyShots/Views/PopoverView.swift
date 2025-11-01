@@ -64,6 +64,9 @@ struct PopoverView: View {
     @State private var recentlyHiddenIDs: Set<String> = []
     @State private var showRevertBanner: Bool = false
 
+    /// Selection mode state
+    @State private var isSelectionMode: Bool = false
+
     // MARK: - Body
 
     var body: some View {
@@ -174,100 +177,154 @@ struct PopoverView: View {
                 .help("Open Settings")
             }
 
-            // Monitored folder row
+            // Monitored folder row with selection counter
             HStack(spacing: 8) {
-                Text("Monitored:")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                    .fontWeight(.medium)
-
-                Button(action: {
-                    // Open folder in Finder
-                    let url = URL(fileURLWithPath: folderMonitor.currentFolder)
-                    NSWorkspace.shared.open(url)
-                }) {
-                    // Show only folder name, not full path
-                    Text(URL(fileURLWithPath: folderMonitor.currentFolder).lastPathComponent)
+                // Left side: Monitored folder + counter
+                HStack(spacing: 6) {
+                    Text("Monitored:")
                         .font(.caption2)
-                        .foregroundColor(.blue)
-                        .lineLimit(1)
-                        .underline()
+                        .foregroundColor(.secondary)
+                        .fontWeight(.medium)
+
+                    Button(action: {
+                        // Open folder in Finder
+                        let url = URL(fileURLWithPath: folderMonitor.currentFolder)
+                        NSWorkspace.shared.open(url)
+                    }) {
+                        // Show only folder name, not full path
+                        Text(URL(fileURLWithPath: folderMonitor.currentFolder).lastPathComponent)
+                            .font(.caption2)
+                            .foregroundColor(.blue)
+                            .lineLimit(1)
+                            .underline()
+                    }
+                    .buttonStyle(.plain)
+                    .help(folderMonitor.currentFolder) // Full path in tooltip
+
+                    // Selection counter (when in selection mode and items selected)
+                    if isSelectionMode && !selectedScreenshots.isEmpty {
+                        HStack(spacing: 4) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 9))
+                                .foregroundColor(.white)
+                            Text("\(selectedScreenshots.count)")
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundColor(.white)
+                        }
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(Color.blue)
+                        .cornerRadius(3)
+                    }
                 }
-                .buttonStyle(.plain)
-                .help(folderMonitor.currentFolder) // Full path in tooltip
 
                 Spacer()
 
-                // Selection controls - always reserve space to prevent header resize
-                Group {
+                // Right side: Selection controls
+                HStack(spacing: 6) {
                     if screenshots.isEmpty {
-                        // Invisible placeholder to maintain height
-                        HStack(spacing: 6) {
-                            Image(systemName: "checkmark.circle")
-                                .font(.system(size: 11))
-                            Text("Select All")
-                                .font(.system(size: 10, weight: .medium))
-                        }
-                        .foregroundColor(.clear)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                    } else if selectedScreenshots.isEmpty {
-                        // Nothing selected - Select All on right
-                        HStack(spacing: 6) {
-                            Button(action: { selectAll() }) {
-                                HStack(spacing: 3) {
-                                    Image(systemName: "checkmark.circle")
-                                        .font(.system(size: 11))
-                                    Text("Select All")
-                                        .font(.system(size: 10, weight: .medium))
-                                }
-                                .foregroundColor(.blue)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 3)
-                                .background(Color.blue.opacity(0.1))
-                                .cornerRadius(4)
+                        // Empty placeholder
+                        Color.clear.frame(width: 1, height: 24)
+                    } else if !isSelectionMode {
+                        // Not in selection mode - show "Select" button
+                        Button(action: {
+                            isSelectionMode = true
+                        }) {
+                            HStack(spacing: 3) {
+                                Image(systemName: "checkmark.circle")
+                                    .font(.system(size: 11))
+                                Text("Select")
+                                    .font(.system(size: 10, weight: .medium))
                             }
-                            .buttonStyle(.plain)
-                            .help("Select all (⌘A)")
-                        }
-                    } else {
-                        // Screenshots selected - Counter on left, Deselect All + Trash on right
-                        HStack(spacing: 6) {
-                            // Counter badge
-                            HStack(spacing: 4) {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .font(.system(size: 10))
-                                    .foregroundColor(.white)
-                                Text("\(selectedScreenshots.count)")
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .foregroundColor(.white)
-                            }
+                            .foregroundColor(.blue)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 3)
-                            .background(Color.blue)
+                            .background(Color.blue.opacity(0.1))
                             .cornerRadius(4)
-                            .help("\(selectedScreenshots.count) screenshot\(selectedScreenshots.count == 1 ? "" : "s") selected")
-
-                            Spacer()
-
-                            // Deselect button
-                            Button(action: { deselectAll() }) {
-                                Image(systemName: "xmark.circle.fill")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(.secondary)
-                            }
-                            .buttonStyle(.plain)
-                            .help("Deselect all")
-
-                            // Trash button (always rightmost)
-                            Button(action: { deleteSelectedScreenshots() }) {
-                                Image(systemName: "trash")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(.red)
-                            }
-                            .buttonStyle(.plain)
-                            .help("Delete \(selectedScreenshots.count) screenshot\(selectedScreenshots.count == 1 ? "" : "s") (⌫)")
                         }
+                        .buttonStyle(.plain)
+                        .help("Enter selection mode")
+                    } else if selectedScreenshots.isEmpty {
+                        // Selection mode but nothing selected - show Select All
+                        Button(action: { selectAll() }) {
+                            HStack(spacing: 3) {
+                                Image(systemName: "checkmark.circle")
+                                    .font(.system(size: 11))
+                                Text("Select All")
+                                    .font(.system(size: 10, weight: .medium))
+                            }
+                            .foregroundColor(.blue)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Color.blue.opacity(0.1))
+                            .cornerRadius(4)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Select all (⌘A)")
+                    } else if selectedScreenshots.count == 1 {
+                        // One item selected - show X + Trash
+                        Button(action: {
+                            deselectAll()
+                            isSelectionMode = false
+                        }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Exit selection mode")
+
+                        Button(action: { deleteSelectedScreenshots() }) {
+                            Image(systemName: "trash")
+                                .font(.system(size: 11))
+                                .foregroundColor(.red)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Delete (⌫)")
+                    } else {
+                        // 2+ items selected - show Select All + Deselect All + Trash
+                        Button(action: { selectAll() }) {
+                            HStack(spacing: 3) {
+                                Image(systemName: "checkmark.circle")
+                                    .font(.system(size: 11))
+                                Text("Select All")
+                                    .font(.system(size: 10, weight: .medium))
+                            }
+                            .foregroundColor(.blue)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Color.blue.opacity(0.1))
+                            .cornerRadius(4)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Select all (⌘A)")
+
+                        Button(action: {
+                            deselectAll()
+                            isSelectionMode = false
+                        }) {
+                            HStack(spacing: 3) {
+                                Image(systemName: "xmark.circle")
+                                    .font(.system(size: 11))
+                                Text("Deselect All")
+                                    .font(.system(size: 10, weight: .medium))
+                            }
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Color.secondary.opacity(0.1))
+                            .cornerRadius(4)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Deselect all")
+
+                        Button(action: { deleteSelectedScreenshots() }) {
+                            Image(systemName: "trash")
+                                .font(.system(size: 11))
+                                .foregroundColor(.red)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Delete \(selectedScreenshots.count) screenshots (⌫)")
                     }
                 }
             }
@@ -306,6 +363,7 @@ struct PopoverView: View {
                     selectedScreenshots: $selectedScreenshots,
                     enableHoverZoom: enableHoverZoom,
                     timeFilterMinutes: timeFilter,
+                    isSelectionMode: $isSelectionMode,
                     lastSelectedID: $lastSelectedID,
                     onSelectScreenshot: { screenshot, modifiers in
                         handleSelection(screenshot: screenshot, modifiers: modifiers)
@@ -823,6 +881,7 @@ struct ScreenshotGridView: NSViewRepresentable {
     @Binding var selectedScreenshots: Set<String>
     let enableHoverZoom: Bool
     let timeFilterMinutes: Int
+    @Binding var isSelectionMode: Bool
     @Binding var lastSelectedID: String?
     let onSelectScreenshot: (Screenshot, NSEvent.ModifierFlags) -> Void
     let onOpenScreenshots: (Screenshot) -> Void
@@ -838,6 +897,7 @@ struct ScreenshotGridView: NSViewRepresentable {
         nsView.selectedScreenshots = selectedScreenshots
         nsView.enableHoverZoom = enableHoverZoom
         nsView.timeFilterMinutes = timeFilterMinutes
+        nsView.isSelectionMode = isSelectionMode
         nsView.onSelectScreenshot = onSelectScreenshot
         nsView.onOpenScreenshots = onOpenScreenshots
         nsView.onDeselectAll = {
@@ -1098,6 +1158,7 @@ class ScreenshotGridNSView: NSScrollView {
     var selectedScreenshots: Set<String> = []
     var enableHoverZoom: Bool = false
     var timeFilterMinutes: Int = 10
+    var isSelectionMode: Bool = false
     var onSelectScreenshot: ((Screenshot, NSEvent.ModifierFlags) -> Void)?
     var onOpenScreenshots: ((Screenshot) -> Void)?
     var onDeselectAll: (() -> Void)?
@@ -1174,6 +1235,7 @@ class ScreenshotGridNSView: NSScrollView {
             thumbnailView.frame = frame
             thumbnailView.screenshot = screenshot
             thumbnailView.isSelected = selectedScreenshots.contains(screenshot.id)
+            thumbnailView.isSelectionMode = isSelectionMode
             thumbnailView.enableHoverZoom = enableHoverZoom
             thumbnailView.timeFilterMinutes = timeFilterMinutes
             thumbnailView.onSelect = { [weak self] modifiers in
@@ -1209,6 +1271,7 @@ class ScreenshotGridNSView: NSScrollView {
 class ThumbnailNSView: NSView {
     var screenshot: Screenshot?
     var isSelected: Bool = false
+    var isSelectionMode: Bool = false
     var enableHoverZoom: Bool = false
     var onSelect: ((NSEvent.ModifierFlags) -> Void)?
     var onOpen: (() -> Void)?
@@ -1389,14 +1452,22 @@ class ThumbnailNSView: NSView {
 
         // Handle double-click
         if event.clickCount == 2 {
-            // Double click opens
-            clickTimer?.invalidate()
-            clickTimer = nil
-            clickCount = 0
-            onOpen?()
+            // Double click opens (only when NOT in selection mode)
+            if !isSelectionMode {
+                clickTimer?.invalidate()
+                clickTimer = nil
+                clickCount = 0
+                onOpen?()
+            }
         } else if event.clickCount == 1 {
-            // Single click selects (with modifiers)
-            onSelect?(event.modifierFlags)
+            // Single click behavior
+            if isSelectionMode {
+                // In selection mode: click toggles selection (no modifiers needed)
+                onSelect?(NSEvent.ModifierFlags.command) // Simulate Cmd to toggle
+            } else {
+                // Not in selection mode: pass modifiers normally
+                onSelect?(event.modifierFlags)
+            }
         }
 
         isDragging = false
@@ -1438,40 +1509,86 @@ class ThumbnailNSView: NSView {
             // Restore graphics state
             NSGraphicsContext.current?.restoreGraphicsState()
 
-            // Draw border
-            if isSelected {
-                NSColor.systemBlue.setStroke()
-                let borderPath = NSBezierPath(roundedRect: imageRect, xRadius: 8, yRadius: 8)
-                borderPath.lineWidth = 3
-                borderPath.stroke()
+            // Draw border and checkbox
+            if isSelectionMode {
+                // In selection mode: always show checkbox
+                if isSelected {
+                    // Selected: blue border + filled checkbox
+                    NSColor.systemBlue.setStroke()
+                    let borderPath = NSBezierPath(roundedRect: imageRect, xRadius: 8, yRadius: 8)
+                    borderPath.lineWidth = 3
+                    borderPath.stroke()
+                } else {
+                    // Not selected: gray border
+                    NSColor.gray.withAlphaComponent(0.3).setStroke()
+                    let borderPath = NSBezierPath(roundedRect: imageRect, xRadius: 8, yRadius: 8)
+                    borderPath.lineWidth = 1
+                    borderPath.stroke()
+                }
 
-                // Draw checkmark
-                let checkmarkSize: CGFloat = 16
-                let checkmarkRect = NSRect(
-                    x: imageRect.maxX - checkmarkSize - 4,
-                    y: imageRect.maxY - checkmarkSize - 4,
-                    width: checkmarkSize,
-                    height: checkmarkSize
+                // Always show checkbox in selection mode
+                let checkboxSize: CGFloat = 20
+                let checkboxRect = NSRect(
+                    x: imageRect.minX + 4,
+                    y: imageRect.maxY - checkboxSize - 4,
+                    width: checkboxSize,
+                    height: checkboxSize
                 )
 
-                // Draw white circle background
+                // Draw checkbox background
                 NSColor.white.setFill()
-                let circlePath = NSBezierPath(ovalIn: checkmarkRect.insetBy(dx: -2, dy: -2))
-                circlePath.fill()
+                let bgCircle = NSBezierPath(ovalIn: checkboxRect)
+                bgCircle.fill()
 
-                // Draw checkmark icon
-                let checkImage = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: nil)
+                // Draw checkbox icon
+                let checkboxIcon = isSelected ? "checkmark.circle.fill" : "circle"
+                let checkImage = NSImage(systemSymbolName: checkboxIcon, accessibilityDescription: nil)
                 checkImage?.isTemplate = true
 
                 NSGraphicsContext.current?.saveGraphicsState()
-                NSColor.systemBlue.set()
-                checkImage?.draw(in: checkmarkRect)
+                if isSelected {
+                    NSColor.systemBlue.set()
+                } else {
+                    NSColor.gray.set()
+                }
+                checkImage?.draw(in: checkboxRect)
                 NSGraphicsContext.current?.restoreGraphicsState()
             } else {
-                NSColor.gray.withAlphaComponent(0.2).setStroke()
-                let borderPath = NSBezierPath(roundedRect: imageRect, xRadius: 8, yRadius: 8)
-                borderPath.lineWidth = 1
-                borderPath.stroke()
+                // Not in selection mode: only show checkmark if selected
+                if isSelected {
+                    NSColor.systemBlue.setStroke()
+                    let borderPath = NSBezierPath(roundedRect: imageRect, xRadius: 8, yRadius: 8)
+                    borderPath.lineWidth = 3
+                    borderPath.stroke()
+
+                    // Draw checkmark
+                    let checkmarkSize: CGFloat = 16
+                    let checkmarkRect = NSRect(
+                        x: imageRect.maxX - checkmarkSize - 4,
+                        y: imageRect.maxY - checkmarkSize - 4,
+                        width: checkmarkSize,
+                        height: checkmarkSize
+                    )
+
+                    // Draw white circle background
+                    NSColor.white.setFill()
+                    let circlePath = NSBezierPath(ovalIn: checkmarkRect.insetBy(dx: -2, dy: -2))
+                    circlePath.fill()
+
+                    // Draw checkmark icon
+                    let checkImage = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: nil)
+                    checkImage?.isTemplate = true
+
+                    NSGraphicsContext.current?.saveGraphicsState()
+                    NSColor.systemBlue.set()
+                    checkImage?.draw(in: checkmarkRect)
+                    NSGraphicsContext.current?.restoreGraphicsState()
+                } else {
+                    NSColor.gray.withAlphaComponent(0.2).setStroke()
+                    let borderPath = NSBezierPath(roundedRect: imageRect, xRadius: 8, yRadius: 8)
+                    borderPath.lineWidth = 1
+                    borderPath.stroke()
+                }
             }
 
             // Draw expiring indicator if screenshot is about to disappear (<= 30 seconds)
