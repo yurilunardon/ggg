@@ -158,6 +158,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // If settings window doesn't exist, create it
         if settingsWindow == nil {
             let settingsView = SettingsView()
+                .environmentObject(folderMonitor!)
             let hostingController = NSHostingController(rootView: settingsView)
 
             settingsWindow = NSWindow(contentViewController: hostingController)
