@@ -1578,12 +1578,12 @@ class ThumbnailNSView: NSView {
                 NSGraphicsContext.current?.restoreGraphicsState()
             } else if secondsRemaining == 0 {
                 // Show waving hand when countdown finishes
-                let emojiSize: CGFloat = 40
+                let badgeDimension: CGFloat = 40
                 let emojiRect = NSRect(
-                    x: imageRect.maxX - emojiSize - 8,
-                    y: imageRect.maxY - emojiSize - 8,
-                    width: emojiSize,
-                    height: emojiSize
+                    x: imageRect.maxX - badgeDimension - 8,
+                    y: imageRect.maxY - badgeDimension - 8,
+                    width: badgeDimension,
+                    height: badgeDimension
                 )
 
                 NSGraphicsContext.current?.saveGraphicsState()
