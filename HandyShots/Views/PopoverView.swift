@@ -201,8 +201,8 @@ struct PopoverView: View {
                 // Selection controls - always reserve space to prevent header resize
                 Group {
                     if screenshots.isEmpty {
-                        // Invisible placeholder to maintain height (same size as Select All button)
-                        HStack(spacing: 3) {
+                        // Invisible placeholder to maintain height
+                        HStack(spacing: 6) {
                             Image(systemName: "checkmark.circle")
                                 .font(.system(size: 11))
                             Text("Select All")
@@ -212,55 +212,54 @@ struct PopoverView: View {
                         .padding(.horizontal, 6)
                         .padding(.vertical, 3)
                     } else if selectedScreenshots.isEmpty {
-                        // Select All button when nothing selected
-                        Button(action: { selectAll() }) {
-                            HStack(spacing: 3) {
-                                Image(systemName: "checkmark.circle")
-                                    .font(.system(size: 11))
-                                Text("Select All")
-                                    .font(.system(size: 10, weight: .medium))
-                            }
-                            .foregroundColor(.blue)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 3)
-                            .background(Color.blue.opacity(0.1))
-                            .cornerRadius(4)
-                        }
-                        .buttonStyle(.plain)
-                        .help("Select all (⌘A)")
-                    } else {
-                        // Screenshots selected - Counter + Deselect on left, Trash on right
+                        // Nothing selected - Select All on right
                         HStack(spacing: 6) {
-                            // Counter badge + Deselect button (left side)
-                            HStack(spacing: 4) {
-                                // Counter badge
-                                HStack(spacing: 4) {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .font(.system(size: 10))
-                                        .foregroundColor(.white)
-                                    Text("\(selectedScreenshots.count)")
-                                        .font(.system(size: 10, weight: .semibold))
-                                        .foregroundColor(.white)
+                            Button(action: { selectAll() }) {
+                                HStack(spacing: 3) {
+                                    Image(systemName: "checkmark.circle")
+                                        .font(.system(size: 11))
+                                    Text("Select All")
+                                        .font(.system(size: 10, weight: .medium))
                                 }
+                                .foregroundColor(.blue)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 3)
-                                .background(Color.blue)
+                                .background(Color.blue.opacity(0.1))
                                 .cornerRadius(4)
-                                .help("\(selectedScreenshots.count) screenshot\(selectedScreenshots.count == 1 ? "" : "s") selected")
-
-                                // Deselect button
-                                Button(action: { deselectAll() }) {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .font(.system(size: 11))
-                                        .foregroundColor(.secondary)
-                                }
-                                .buttonStyle(.plain)
-                                .help("Deselect all")
                             }
+                            .buttonStyle(.plain)
+                            .help("Select all (⌘A)")
+                        }
+                    } else {
+                        // Screenshots selected - Counter on left, Deselect All + Trash on right
+                        HStack(spacing: 6) {
+                            // Counter badge
+                            HStack(spacing: 4) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.white)
+                                Text("\(selectedScreenshots.count)")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundColor(.white)
+                            }
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Color.blue)
+                            .cornerRadius(4)
+                            .help("\(selectedScreenshots.count) screenshot\(selectedScreenshots.count == 1 ? "" : "s") selected")
 
                             Spacer()
 
-                            // Trash button (right side)
+                            // Deselect button
+                            Button(action: { deselectAll() }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Deselect all")
+
+                            // Trash button (always rightmost)
                             Button(action: { deleteSelectedScreenshots() }) {
                                 Image(systemName: "trash")
                                     .font(.system(size: 11))
@@ -322,6 +321,22 @@ struct PopoverView: View {
                         if event.modifierFlags.contains(.command) && event.charactersIgnoringModifiers == "a" {
                             selectAll()
                             return nil // consume event
+                        }
+
+                        // Cmd+C: Copy selected screenshots
+                        if event.modifierFlags.contains(.command) && event.charactersIgnoringModifiers == "c" {
+                            if !selectedScreenshots.isEmpty {
+                                copySelectedScreenshots()
+                                return nil // consume event
+                            }
+                        }
+
+                        // Cmd+X: Cut selected screenshots (move from folder)
+                        if event.modifierFlags.contains(.command) && event.charactersIgnoringModifiers == "x" {
+                            if !selectedScreenshots.isEmpty {
+                                cutSelectedScreenshots()
+                                return nil // consume event
+                            }
                         }
 
                         // Delete or Backspace: Delete selected screenshots
@@ -662,6 +677,62 @@ struct PopoverView: View {
         print("↩️ Reverted \(recentlyHiddenIDs.count) hidden screenshot(s)")
     }
 
+    /// Copy selected screenshots to pasteboard (Cmd+C)
+    private func copySelectedScreenshots() {
+        guard !selectedScreenshots.isEmpty else { return }
+
+        let selectedURLs = screenshots
+            .filter { selectedScreenshots.contains($0.id) }
+            .map { $0.url }
+
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.writeObjects(selectedURLs as [NSURL])
+
+        print("📋 Copied \(selectedURLs.count) screenshot(s) to clipboard")
+    }
+
+    /// Cut selected screenshots (Cmd+X) - copy and move from folder
+    private func cutSelectedScreenshots() {
+        guard !selectedScreenshots.isEmpty else { return }
+
+        let selectedURLs = screenshots
+            .filter { selectedScreenshots.contains($0.id) }
+            .map { $0.url }
+
+        // Copy to pasteboard
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.writeObjects(selectedURLs as [NSURL])
+
+        // Move files from monitored folder to temporary location (Downloads folder)
+        let fileManager = FileManager.default
+        let downloadsURL = fileManager.urls(for: .downloadsDirectory, in: .userDomainMask).first!
+        var movedCount = 0
+
+        for url in selectedURLs {
+            let destinationURL = downloadsURL.appendingPathComponent(url.lastPathComponent)
+            do {
+                // If file exists at destination, remove it first
+                if fileManager.fileExists(atPath: destinationURL.path) {
+                    try fileManager.removeItem(at: destinationURL)
+                }
+                try fileManager.moveItem(at: url, to: destinationURL)
+                movedCount += 1
+                print("✂️ Moved file to Downloads: \(url.lastPathComponent)")
+            } catch {
+                print("❌ Failed to move file: \(url.lastPathComponent) - \(error.localizedDescription)")
+            }
+        }
+
+        print("✂️ Cut \(movedCount) of \(selectedURLs.count) screenshot(s) to clipboard and moved to Downloads")
+
+        // Clear selection and refresh
+        selectedScreenshots.removeAll()
+        lastSelectedID = nil
+        refreshScreenshots()
+    }
+
     /// Open screenshot(s) - if selected, open all selected ones
     private func openScreenshots(for screenshot: Screenshot) {
         if selectedScreenshots.contains(screenshot.id) && selectedScreenshots.count > 1 {
@@ -885,7 +956,7 @@ class DragSelectionView: NSView {
         if distanceFromTop < scrollThreshold || distanceFromBottom < scrollThreshold {
             // Start auto-scroll if not already running
             if autoScrollTimer == nil {
-                autoScrollTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+                autoScrollTimer = Timer.scheduledTimer(withTimeInterval: 0.02, repeats: true) { [weak self] _ in
                     self?.performAutoScroll()
                 }
             }
@@ -903,7 +974,7 @@ class DragSelectionView: NSView {
 
         let visibleRect = scrollView.documentVisibleRect
         let scrollThreshold: CGFloat = 30
-        let scrollSpeed: CGFloat = 10
+        let scrollSpeed: CGFloat = 5
 
         var newOrigin = visibleRect.origin
 
