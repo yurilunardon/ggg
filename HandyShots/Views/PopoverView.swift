@@ -186,22 +186,21 @@ struct PopoverView: View {
                 .buttonStyle(.plain)
                 .help("Click to change time filter • \(timeFilter) minutes")
 
-                // Selection counter badge (when items selected) - n/N format
-                if !selectedScreenshots.isEmpty {
-                    HStack(spacing: 3) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 10))
-                            .foregroundColor(.white)
-                        Text("\(selectedScreenshots.count)/\(screenshots.count)")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundColor(.white)
-                    }
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(Color.blue)
-                    .cornerRadius(4)
-                    .help("\(selectedScreenshots.count) of \(screenshots.count) screenshot\(screenshots.count == 1 ? "" : "s") selected")
+                // Selection counter badge (always visible) - n/N format
+                HStack(spacing: 3) {
+                    Image(systemName: selectedScreenshots.isEmpty ? "checkmark.circle" : "checkmark.circle.fill")
+                        .font(.system(size: 10))
+                        .foregroundColor(.white)
+                    Text("\(selectedScreenshots.count)/\(screenshots.count)")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(.white)
                 }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(Color.blue)
+                .cornerRadius(4)
+                .opacity(selectedScreenshots.isEmpty ? 0.4 : 1.0)
+                .help(selectedScreenshots.isEmpty ? "No items selected" : "\(selectedScreenshots.count) of \(screenshots.count) screenshot\(screenshots.count == 1 ? "" : "s") selected")
 
                 Spacer()
 
@@ -813,9 +812,10 @@ struct PopoverView: View {
         }
     }
 
-    /// Start timer to refresh screenshots periodically (instant refresh every 0.5s)
+    /// Start timer to refresh screenshots periodically (smooth refresh for animations)
     private func startRefreshTimer() {
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
+        // Use 60 FPS (0.0167s) for buttery smooth countdown animations
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { _ in
             refreshScreenshots()
         }
     }
