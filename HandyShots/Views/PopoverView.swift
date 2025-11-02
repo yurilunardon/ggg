@@ -186,6 +186,23 @@ struct PopoverView: View {
                 .buttonStyle(.plain)
                 .help("Click to change time filter • \(timeFilter) minutes")
 
+                // Selection counter badge (when items selected) - n/N format
+                if !selectedScreenshots.isEmpty {
+                    HStack(spacing: 3) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(.white)
+                        Text("\(selectedScreenshots.count)/\(screenshots.count)")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color.blue)
+                    .cornerRadius(4)
+                    .help("\(selectedScreenshots.count) of \(screenshots.count) screenshot\(screenshots.count == 1 ? "" : "s") selected")
+                }
+
                 Spacer()
 
                 // Settings gear button
@@ -247,23 +264,6 @@ struct PopoverView: View {
                 .buttonStyle(.plain)
                 .disabled(selectedScreenshots.isEmpty)
                 .help(selectedScreenshots.isEmpty ? "No items selected" : "Delete \(selectedScreenshots.count) screenshot\(selectedScreenshots.count == 1 ? "" : "s") (⌫)")
-
-                // Selection counter (when items selected) - n/N format
-                if !selectedScreenshots.isEmpty {
-                    HStack(spacing: 3) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 10))
-                            .foregroundColor(.white)
-                        Text("\(selectedScreenshots.count)/\(screenshots.count)")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundColor(.white)
-                    }
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(Color.blue)
-                    .cornerRadius(4)
-                    .help("\(selectedScreenshots.count) of \(screenshots.count) screenshot\(screenshots.count == 1 ? "" : "s") selected")
-                }
 
                 Spacer()
             }
@@ -1456,6 +1456,7 @@ class ThumbnailNSView: NSView {
 
             // Draw border (selection or countdown)
             let secondsRemaining = secondsUntilExpiration(for: screenshot)
+            let preciseTime = preciseSecondsUntilExpiration(for: screenshot)
 
             if isSelected {
                 // Selected: blue border
@@ -1463,17 +1464,17 @@ class ThumbnailNSView: NSView {
                 let borderPath = NSBezierPath(roundedRect: imageRect, xRadius: 8, yRadius: 8)
                 borderPath.lineWidth = 3
                 borderPath.stroke()
-            } else if secondsRemaining <= 30 && secondsRemaining > 5 {
-                // Countdown border (30-5 seconds)
+            } else if preciseTime <= 30.0 && preciseTime > 5.0 {
+                // Countdown border (30-5 seconds) - using precise time for smooth animation
                 NSGraphicsContext.current?.saveGraphicsState()
 
                 // Calculate progress (0.0 to 1.0, where 1.0 is full border at 30s)
-                let progress = CGFloat(secondsRemaining) / 30.0
+                let progress = preciseTime / 30.0
 
                 // Smooth color interpolation based on remaining time
                 // Color gradient: Green (30s) -> Yellow (22s) -> Orange (15s) -> Red (8s) -> Dark Red (5s)
                 let borderColor: NSColor
-                let t = CGFloat(secondsRemaining)
+                let t = preciseTime
 
                 if t > 22 {
                     // Green to Yellow (30s -> 22s)
@@ -1693,27 +1694,45 @@ class ThumbnailNSView: NSView {
             NSGraphicsContext.current?.restoreGraphicsState()
 
             // Show smooth waving hand animation when <= 5 seconds remain
-            if secondsRemaining <= 5 && secondsRemaining > 0 {
+            let preciseFinalTime = preciseSecondsUntilExpiration(for: screenshot)
+            if preciseFinalTime <= 5.0 {
                 NSGraphicsContext.current?.saveGraphicsState()
 
-                // Calculate smooth fade opacity based on remaining time
-                // Fade in from 5s to 3s, stay solid from 3s to 1s, then pulse at final second
+                // Calculate smooth fade opacity and scale based on remaining time
                 let darkenAlpha: CGFloat
                 let emojiAlpha: CGFloat
+                let scale: CGFloat
 
-                if secondsRemaining > 3 {
-                    // Fade in: 5s (0.2) -> 3s (0.6)
-                    let fadeProgress = (5.0 - CGFloat(secondsRemaining)) / 2.0
-                    darkenAlpha = 0.2 + (fadeProgress * 0.4)
-                    emojiAlpha = 0.5 + (fadeProgress * 0.5)
-                } else if secondsRemaining > 1 {
-                    // Stay solid
+                if preciseFinalTime > 4.5 {
+                    // Initial fade-in and scale-up (5s -> 4.5s)
+                    let progress = (5.0 - preciseFinalTime) / 0.5
+                    darkenAlpha = 0.0 + (progress * 0.3)
+                    emojiAlpha = 0.0 + (progress * 1.0)
+                    scale = 0.5 + (progress * 0.5)  // Scale from 0.5 to 1.0
+                } else if preciseFinalTime > 3.0 {
+                    // Fully visible and waving (4.5s -> 3s)
+                    darkenAlpha = 0.3
+                    emojiAlpha = 1.0
+                    scale = 1.0
+                } else if preciseFinalTime > 1.0 {
+                    // Increase intensity (3s -> 1s)
+                    let progress = (3.0 - preciseFinalTime) / 2.0
+                    darkenAlpha = 0.3 + (progress * 0.3)  // Up to 0.6
+                    emojiAlpha = 1.0
+                    scale = 1.0
+                } else if preciseFinalTime > 0.5 {
+                    // Final moments - pulse
                     darkenAlpha = 0.6
                     emojiAlpha = 1.0
+                    // Subtle pulse on scale
+                    let pulse = sin(Date().timeIntervalSince1970 * 8) * 0.05
+                    scale = 1.0 + pulse
                 } else {
-                    // Final second: pulse to maximum darkness
-                    darkenAlpha = 0.7
-                    emojiAlpha = 1.0
+                    // Disappearing animation (0.5s -> 0s)
+                    let progress = preciseFinalTime / 0.5  // 1.0 at 0.5s, 0.0 at 0s
+                    darkenAlpha = 0.6 * progress
+                    emojiAlpha = progress
+                    scale = 0.3 + (progress * 0.7)  // Scale from 1.0 down to 0.3
                 }
 
                 // Darken the screenshot with smooth fade
@@ -1721,22 +1740,22 @@ class ThumbnailNSView: NSView {
                 let darkenRect = NSBezierPath(roundedRect: imageRect, xRadius: 8, yRadius: 8)
                 darkenRect.fill()
 
-                // Draw waving hand with smooth fade and realistic animation
+                // Draw waving hand with smooth animation
                 let waveEmoji = "👋"
-                let emojiSize: CGFloat = 56  // Slightly larger for more presence
+                let baseEmojiSize: CGFloat = 64
 
-                // Create realistic waving animation
+                // Create smooth waving animation (slower and more natural)
                 let time = Date().timeIntervalSince1970
-                let waveSpeed: Double = 4.0  // Faster waving
+                let waveSpeed: Double = 2.5
 
-                // Horizontal movement (back and forth)
-                let horizontalOffset = sin(time * waveSpeed) * 8
+                // Gentle horizontal sway
+                let horizontalOffset = sin(time * waveSpeed) * 6
 
-                // Vertical movement (slight up and down)
-                let verticalOffset = sin(time * waveSpeed * 2) * 3
+                // Subtle vertical bob
+                let verticalOffset = sin(time * waveSpeed * 1.5) * 2
 
-                // Rotation angle for waving effect (-15° to +15°)
-                let rotationAngle = sin(time * waveSpeed) * 15  // degrees
+                // Smooth rotation for waving (-12° to +12°)
+                let rotationAngle = sin(time * waveSpeed) * 12
 
                 // Calculate center position with offsets
                 let centerX = imageRect.midX + horizontalOffset
@@ -1745,15 +1764,16 @@ class ThumbnailNSView: NSView {
                 // Save graphics state for transformation
                 NSGraphicsContext.current?.saveGraphicsState()
 
-                // Apply rotation transform
+                // Apply transformations: translate, scale, rotate
                 let transform = NSAffineTransform()
                 transform.translateX(by: centerX, yBy: centerY)
+                transform.scale(by: scale)
                 transform.rotate(byDegrees: rotationAngle)
                 transform.concat()
 
                 // Draw emoji at origin (transformation applied)
                 let emojiAttributes: [NSAttributedString.Key: Any] = [
-                    .font: NSFont.systemFont(ofSize: emojiSize),
+                    .font: NSFont.systemFont(ofSize: baseEmojiSize),
                     .foregroundColor: NSColor.white.withAlphaComponent(emojiAlpha)
                 ]
 
@@ -1806,6 +1826,13 @@ class ThumbnailNSView: NSView {
         let expirationDate = screenshot.createdDate.addingTimeInterval(Double(timeFilterMinutes * 60))
         let remaining = expirationDate.timeIntervalSince(Date())
         return max(0, Int(remaining))
+    }
+
+    /// Get precise time remaining with subsecond accuracy for smooth animations
+    private func preciseSecondsUntilExpiration(for screenshot: Screenshot) -> CGFloat {
+        let expirationDate = screenshot.createdDate.addingTimeInterval(Double(timeFilterMinutes * 60))
+        let remaining = expirationDate.timeIntervalSince(Date())
+        return max(0, CGFloat(remaining))
     }
 
     private func timeAgo(from date: Date) -> String {
