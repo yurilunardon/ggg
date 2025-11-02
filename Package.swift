@@ -15,15 +15,23 @@ let package = Package(
         )
     ],
     dependencies: [
-        // No external dependencies for MVP
+        // Lottie for TGS animation support
+        .package(url: "https://github.com/airbnb/lottie-ios.git", from: "4.3.0")
     ],
     targets: [
         .executableTarget(
             name: "HandyShots",
+            dependencies: [
+                .product(name: "Lottie", package: "lottie-ios")
+            ],
             path: "HandyShots",
             exclude: [
                 "Resources/Info.plist",
-                "Resources/HandyShots.entitlements"
+                "Resources/HandyShots.entitlements",
+                "Resources/Animations/README.md"
+            ],
+            resources: [
+                .process("Resources/Animations")
             ],
             swiftSettings: [
                 .enableUpcomingFeature("BareSlashRegexLiterals")
