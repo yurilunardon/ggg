@@ -1664,7 +1664,6 @@ class ThumbnailNSView: NSView {
             NSGraphicsContext.current?.restoreGraphicsState()
 
             // Show smooth waving hand animation when <= 5 seconds remain
-            let secondsRemaining = secondsUntilExpiration(for: screenshot)
             if secondsRemaining <= 5 && secondsRemaining > 0 {
                 NSGraphicsContext.current?.saveGraphicsState()
 
