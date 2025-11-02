@@ -106,7 +106,7 @@ struct PopoverView: View {
                 // Revert banner (if screenshots were hidden)
                 if showRevertBanner {
                     revertBanner
-                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .transition(.opacity.combined(with: .scale(scale: 0.9)))
                         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: showRevertBanner)
                 }
 
@@ -135,7 +135,7 @@ struct PopoverView: View {
 
     private var compactHeader: some View {
         VStack(alignment: .leading, spacing: 6) {
-            // App name row
+            // App name row with badges
             HStack(spacing: 8) {
                 Image(systemName: "camera.fill")
                     .font(.title3)
@@ -145,20 +145,46 @@ struct PopoverView: View {
                     .font(.headline)
                     .fontWeight(.bold)
 
-                // Time filter indicator - green badge style
-                HStack(spacing: 3) {
-                    Image(systemName: "clock.fill")
-                        .font(.system(size: 10))
-                        .foregroundColor(.green)
-                    Text("\(timeFilter)min")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(.green)
+                // Folder badge - clickable
+                Button(action: {
+                    openSettingsToFolder()
+                }) {
+                    HStack(spacing: 3) {
+                        Image(systemName: "folder.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(.orange)
+                        Text(URL(fileURLWithPath: folderMonitor.currentFolder).lastPathComponent)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.orange)
+                            .lineLimit(1)
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color.orange.opacity(0.1))
+                    .cornerRadius(4)
                 }
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(Color.green.opacity(0.1))
-                .cornerRadius(4)
-                .help("Showing screenshots from the last \(timeFilter) minutes")
+                .buttonStyle(.plain)
+                .help("Click to change folder • \(folderMonitor.currentFolder)")
+
+                // Time filter badge - clickable
+                Button(action: {
+                    openSettingsToTimeFilter()
+                }) {
+                    HStack(spacing: 3) {
+                        Image(systemName: "clock.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(.green)
+                        Text("\(timeFilter)min")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.green)
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color.green.opacity(0.1))
+                    .cornerRadius(4)
+                }
+                .buttonStyle(.plain)
+                .help("Click to change time filter • \(timeFilter) minutes")
 
                 // Selection counter (when items selected)
                 if !selectedScreenshots.isEmpty {
@@ -191,28 +217,8 @@ struct PopoverView: View {
                 .help("Open Settings")
             }
 
-            // Monitored folder row
+            // Selection controls row
             HStack(spacing: 8) {
-                Text("Monitored:")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                    .fontWeight(.medium)
-
-                Button(action: {
-                    // Open folder in Finder
-                    let url = URL(fileURLWithPath: folderMonitor.currentFolder)
-                    NSWorkspace.shared.open(url)
-                }) {
-                    // Show only folder name, not full path
-                    Text(URL(fileURLWithPath: folderMonitor.currentFolder).lastPathComponent)
-                        .font(.caption2)
-                        .foregroundColor(.blue)
-                        .lineLimit(1)
-                        .underline()
-                }
-                .buttonStyle(.plain)
-                .help(folderMonitor.currentFolder) // Full path in tooltip
-
                 Spacer()
 
                 // Right side: Selection controls (always visible, disabled when needed)
@@ -763,6 +769,18 @@ struct PopoverView: View {
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
         }
+    }
+
+    /// Open Settings to folder section
+    private func openSettingsToFolder() {
+        openSettings()
+        // TODO: Navigate to folder section in Settings
+    }
+
+    /// Open Settings to time filter section
+    private func openSettingsToTimeFilter() {
+        openSettings()
+        // TODO: Navigate to time filter section in Settings
     }
 
     // MARK: - Screenshot Management
@@ -1453,10 +1471,10 @@ class ThumbnailNSView: NSView {
             }
 
             // Always show checkbox (smaller, square with rounded corners)
-            let checkboxSize: CGFloat = 18
+            let checkboxSize: CGFloat = 16
             let checkboxRect = NSRect(
-                x: imageRect.minX + 5,
-                y: imageRect.maxY - checkboxSize - 5,
+                x: imageRect.minX + 4,
+                y: imageRect.maxY - checkboxSize - 4,
                 width: checkboxSize,
                 height: checkboxSize
             )
@@ -1480,7 +1498,7 @@ class ThumbnailNSView: NSView {
 
             // Draw checkmark icon if selected
             if isSelected {
-                let iconSize: CGFloat = 11
+                let iconSize: CGFloat = 10
                 let iconRect = NSRect(
                     x: checkboxRect.midX - iconSize / 2,
                     y: checkboxRect.midY - iconSize / 2,
@@ -1497,7 +1515,33 @@ class ThumbnailNSView: NSView {
 
             // Draw expiring indicator with circular progress (<= 30 seconds)
             let secondsRemaining = secondsUntilExpiration(for: screenshot)
-            if secondsRemaining <= 30 && secondsRemaining > 0 {
+
+            // Show waving hand when <= 5 seconds remain
+            if secondsRemaining <= 5 && secondsRemaining > 0 {
+                NSGraphicsContext.current?.saveGraphicsState()
+
+                // Darken the entire screenshot
+                NSColor.black.withAlphaComponent(0.5).setFill()
+                let darkenRect = NSBezierPath(roundedRect: imageRect, xRadius: 8, yRadius: 8)
+                darkenRect.fill()
+
+                // Draw large waving hand in center
+                let waveEmoji = "👋"
+                let emojiAttributes: [NSAttributedString.Key: Any] = [
+                    .font: NSFont.systemFont(ofSize: 48)
+                ]
+                let emojiSize = (waveEmoji as NSString).size(withAttributes: emojiAttributes)
+                let emojiRect = NSRect(
+                    x: imageRect.midX - emojiSize.width / 2,
+                    y: imageRect.midY - emojiSize.height / 2,
+                    width: emojiSize.width,
+                    height: emojiSize.height
+                )
+                (waveEmoji as NSString).draw(in: emojiRect, withAttributes: emojiAttributes)
+
+                NSGraphicsContext.current?.restoreGraphicsState()
+            } else if secondsRemaining <= 30 && secondsRemaining > 5 {
+                // Show countdown ring for 30-5 seconds
                 let badgeSize: CGFloat = 36
                 // Position half outside, half inside the image on top-right edge
                 let badgeRect = NSRect(
@@ -1521,11 +1565,11 @@ class ThumbnailNSView: NSView {
                     // Orange (20-10s)
                     progressColor = NSColor.systemOrange
                 } else {
-                    // Red (10-0s)
+                    // Red (10-5s)
                     progressColor = NSColor.systemRed
                 }
 
-                // Draw progress arc (from top, clockwise) - no background fill
+                // Draw progress arc (from top, clockwise)
                 let center = NSPoint(x: badgeRect.midX, y: badgeRect.midY)
                 let radius = (badgeRect.width - 8) / 2
                 let lineWidth: CGFloat = 4
@@ -1547,26 +1591,13 @@ class ThumbnailNSView: NSView {
                 progressArc.lineCapStyle = .round
                 progressArc.stroke()
 
-                // Draw countdown text in center (Xs format) - NOT bold
+                // Draw countdown text in center without background
                 let countdownText = "\(secondsRemaining)s"
                 let textAttributes: [NSAttributedString.Key: Any] = [
                     .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular),
                     .foregroundColor: progressColor
                 ]
                 let textSize = (countdownText as NSString).size(withAttributes: textAttributes)
-
-                // Draw white background behind text for contrast
-                let textPadding: CGFloat = 3
-                let textBgRect = NSRect(
-                    x: center.x - textSize.width / 2 - textPadding,
-                    y: center.y - textSize.height / 2 - textPadding,
-                    width: textSize.width + textPadding * 2,
-                    height: textSize.height + textPadding * 2
-                )
-                let textBgPath = NSBezierPath(roundedRect: textBgRect, xRadius: 3, yRadius: 3)
-                NSColor.white.withAlphaComponent(0.9).setFill()
-                textBgPath.fill()
-
                 let textRect = NSRect(
                     x: center.x - textSize.width / 2,
                     y: center.y - textSize.height / 2,
@@ -1574,38 +1605,6 @@ class ThumbnailNSView: NSView {
                     height: textSize.height
                 )
                 (countdownText as NSString).draw(in: textRect, withAttributes: textAttributes)
-
-                NSGraphicsContext.current?.restoreGraphicsState()
-            } else if secondsRemaining == 0 {
-                // Show waving hand when countdown finishes
-                let badgeDimension: CGFloat = 40
-                let emojiRect = NSRect(
-                    x: imageRect.maxX - badgeDimension - 8,
-                    y: imageRect.maxY - badgeDimension - 8,
-                    width: badgeDimension,
-                    height: badgeDimension
-                )
-
-                NSGraphicsContext.current?.saveGraphicsState()
-
-                // Draw white background circle
-                let bgCircle = NSBezierPath(ovalIn: emojiRect)
-                NSColor.white.withAlphaComponent(0.95).setFill()
-                bgCircle.fill()
-
-                // Draw waving hand emoji
-                let waveEmoji = "👋"
-                let emojiAttributes: [NSAttributedString.Key: Any] = [
-                    .font: NSFont.systemFont(ofSize: 28)
-                ]
-                let emojiSize = (waveEmoji as NSString).size(withAttributes: emojiAttributes)
-                let emojiTextRect = NSRect(
-                    x: emojiRect.midX - emojiSize.width / 2,
-                    y: emojiRect.midY - emojiSize.height / 2,
-                    width: emojiSize.width,
-                    height: emojiSize.height
-                )
-                (waveEmoji as NSString).draw(in: emojiTextRect, withAttributes: emojiAttributes)
 
                 NSGraphicsContext.current?.restoreGraphicsState()
             }
