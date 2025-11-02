@@ -186,6 +186,58 @@ struct PopoverView: View {
                 .buttonStyle(.plain)
                 .help("Click to change time filter • \(timeFilter) minutes")
 
+                Spacer()
+
+                // Settings gear button
+                Button(action: {
+                    openSettings()
+                }) {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 14))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Open Settings")
+            }
+
+            // Selection controls row (left-aligned under title)
+            HStack(spacing: 6) {
+                // Select All button
+                Button(action: { selectAll() }) {
+                    HStack(spacing: 3) {
+                        Image(systemName: "checkmark.circle")
+                            .font(.system(size: 11))
+                        Text("Select All")
+                            .font(.system(size: 10, weight: .medium))
+                    }
+                    .foregroundColor(screenshots.isEmpty ? .gray.opacity(0.5) : .blue)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(screenshots.isEmpty ? Color.clear : Color.blue.opacity(0.1))
+                    .cornerRadius(4)
+                }
+                .buttonStyle(.plain)
+                .disabled(screenshots.isEmpty)
+                .help(screenshots.isEmpty ? "No screenshots" : "Select all (⌘A)")
+
+                // Deselect All button
+                Button(action: { deselectAll() }) {
+                    HStack(spacing: 3) {
+                        Image(systemName: "xmark.circle")
+                            .font(.system(size: 11))
+                        Text("Deselect All")
+                            .font(.system(size: 10, weight: .medium))
+                    }
+                    .foregroundColor(selectedScreenshots.isEmpty ? .gray.opacity(0.5) : .secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(selectedScreenshots.isEmpty ? Color.clear : Color.secondary.opacity(0.1))
+                    .cornerRadius(4)
+                }
+                .buttonStyle(.plain)
+                .disabled(selectedScreenshots.isEmpty)
+                .help(selectedScreenshots.isEmpty ? "No items selected" : "Deselect all")
+
                 // Selection counter (when items selected)
                 if !selectedScreenshots.isEmpty {
                     HStack(spacing: 3) {
@@ -203,72 +255,17 @@ struct PopoverView: View {
                     .help("\(selectedScreenshots.count) screenshot\(selectedScreenshots.count == 1 ? "" : "s") selected")
                 }
 
-                Spacer()
-
-                // Settings gear button
-                Button(action: {
-                    openSettings()
-                }) {
-                    Image(systemName: "gearshape")
-                        .font(.system(size: 14))
-                        .foregroundColor(.secondary)
+                // Trash button
+                Button(action: { deleteSelectedScreenshots() }) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 11))
+                        .foregroundColor(selectedScreenshots.isEmpty ? .gray.opacity(0.3) : .red)
                 }
                 .buttonStyle(.plain)
-                .help("Open Settings")
-            }
+                .disabled(selectedScreenshots.isEmpty)
+                .help(selectedScreenshots.isEmpty ? "No items selected" : "Delete \(selectedScreenshots.count) screenshot\(selectedScreenshots.count == 1 ? "" : "s") (⌫)")
 
-            // Selection controls row
-            HStack(spacing: 8) {
                 Spacer()
-
-                // Right side: Selection controls (always visible, disabled when needed)
-                HStack(spacing: 6) {
-                    // Select All button
-                    Button(action: { selectAll() }) {
-                        HStack(spacing: 3) {
-                            Image(systemName: "checkmark.circle")
-                                .font(.system(size: 11))
-                            Text("Select All")
-                                .font(.system(size: 10, weight: .medium))
-                        }
-                        .foregroundColor(screenshots.isEmpty ? .gray.opacity(0.5) : .blue)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(screenshots.isEmpty ? Color.clear : Color.blue.opacity(0.1))
-                        .cornerRadius(4)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(screenshots.isEmpty)
-                    .help(screenshots.isEmpty ? "No screenshots" : "Select all (⌘A)")
-
-                    // Deselect All button
-                    Button(action: { deselectAll() }) {
-                        HStack(spacing: 3) {
-                            Image(systemName: "xmark.circle")
-                                .font(.system(size: 11))
-                            Text("Deselect All")
-                                .font(.system(size: 10, weight: .medium))
-                        }
-                        .foregroundColor(selectedScreenshots.isEmpty ? .gray.opacity(0.5) : .secondary)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(selectedScreenshots.isEmpty ? Color.clear : Color.secondary.opacity(0.1))
-                        .cornerRadius(4)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(selectedScreenshots.isEmpty)
-                    .help(selectedScreenshots.isEmpty ? "No items selected" : "Deselect all")
-
-                    // Trash button
-                    Button(action: { deleteSelectedScreenshots() }) {
-                        Image(systemName: "trash")
-                            .font(.system(size: 11))
-                            .foregroundColor(selectedScreenshots.isEmpty ? .gray.opacity(0.3) : .red)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(selectedScreenshots.isEmpty)
-                    .help(selectedScreenshots.isEmpty ? "No items selected" : "Delete \(selectedScreenshots.count) screenshot\(selectedScreenshots.count == 1 ? "" : "s") (⌫)")
-                }
             }
         }
         .padding(.horizontal, 12)
@@ -1455,15 +1452,168 @@ class ThumbnailNSView: NSView {
             // Restore graphics state
             NSGraphicsContext.current?.restoreGraphicsState()
 
-            // Draw border and checkbox (always in selection mode)
+            // Draw border (selection or countdown)
+            let secondsRemaining = secondsUntilExpiration(for: screenshot)
+
             if isSelected {
                 // Selected: blue border
                 NSColor.systemBlue.setStroke()
                 let borderPath = NSBezierPath(roundedRect: imageRect, xRadius: 8, yRadius: 8)
                 borderPath.lineWidth = 3
                 borderPath.stroke()
+            } else if secondsRemaining <= 30 && secondsRemaining > 5 {
+                // Countdown border (30-5 seconds)
+                NSGraphicsContext.current?.saveGraphicsState()
+
+                // Calculate progress (0.0 to 1.0, where 1.0 is full border at 30s)
+                let progress = CGFloat(secondsRemaining) / 30.0
+
+                // Determine color with smooth gradient
+                let borderColor: NSColor
+                if secondsRemaining > 25 {
+                    borderColor = NSColor.systemGreen
+                } else if secondsRemaining > 20 {
+                    borderColor = NSColor.systemYellow
+                } else if secondsRemaining > 15 {
+                    borderColor = NSColor.systemOrange
+                } else if secondsRemaining > 10 {
+                    borderColor = NSColor(calibratedRed: 1.0, green: 0.4, blue: 0.0, alpha: 1.0) // Deep orange
+                } else if secondsRemaining > 7 {
+                    borderColor = NSColor.systemRed
+                } else {
+                    borderColor = NSColor(calibratedRed: 0.8, green: 0.0, blue: 0.0, alpha: 1.0) // Dark red
+                }
+
+                // Draw the countdown border as a path that decreases
+                let lineWidth: CGFloat = 3
+                borderColor.setStroke()
+
+                // Create a path that goes around the rectangle for 'progress' amount
+                let rect = imageRect
+                let cornerRadius: CGFloat = 8
+                let perimeter = 2 * (rect.width + rect.height) - 8 * cornerRadius + 2 * .pi * cornerRadius
+                let lengthToDraw = perimeter * progress
+
+                let path = NSBezierPath()
+                var currentLength: CGFloat = 0
+
+                // Start from top-left, go clockwise
+                // Top edge
+                let topStart = NSPoint(x: rect.minX + cornerRadius, y: rect.maxY)
+                path.move(to: topStart)
+
+                let topLength = rect.width - 2 * cornerRadius
+                if currentLength + topLength <= lengthToDraw {
+                    path.line(to: NSPoint(x: rect.maxX - cornerRadius, y: rect.maxY))
+                    currentLength += topLength
+                } else {
+                    path.line(to: NSPoint(x: topStart.x + (lengthToDraw - currentLength), y: rect.maxY))
+                    path.lineWidth = lineWidth
+                    path.stroke()
+                    NSGraphicsContext.current?.restoreGraphicsState()
+                    return
+                }
+
+                // Top-right corner arc
+                let arcLength = (.pi / 2) * cornerRadius
+                if currentLength + arcLength <= lengthToDraw {
+                    path.appendArc(withCenter: NSPoint(x: rect.maxX - cornerRadius, y: rect.maxY - cornerRadius),
+                                   radius: cornerRadius, startAngle: 90, endAngle: 0, clockwise: true)
+                    currentLength += arcLength
+                } else {
+                    let angle = 90 - ((lengthToDraw - currentLength) / cornerRadius) * (180 / .pi)
+                    path.appendArc(withCenter: NSPoint(x: rect.maxX - cornerRadius, y: rect.maxY - cornerRadius),
+                                   radius: cornerRadius, startAngle: 90, endAngle: angle, clockwise: true)
+                    path.lineWidth = lineWidth
+                    path.stroke()
+                    NSGraphicsContext.current?.restoreGraphicsState()
+                    return
+                }
+
+                // Right edge
+                let rightLength = rect.height - 2 * cornerRadius
+                if currentLength + rightLength <= lengthToDraw {
+                    path.line(to: NSPoint(x: rect.maxX, y: rect.minY + cornerRadius))
+                    currentLength += rightLength
+                } else {
+                    path.line(to: NSPoint(x: rect.maxX, y: rect.maxY - cornerRadius - (lengthToDraw - currentLength)))
+                    path.lineWidth = lineWidth
+                    path.stroke()
+                    NSGraphicsContext.current?.restoreGraphicsState()
+                    return
+                }
+
+                // Bottom-right corner arc
+                if currentLength + arcLength <= lengthToDraw {
+                    path.appendArc(withCenter: NSPoint(x: rect.maxX - cornerRadius, y: rect.minY + cornerRadius),
+                                   radius: cornerRadius, startAngle: 0, endAngle: -90, clockwise: true)
+                    currentLength += arcLength
+                } else {
+                    let angle = -((lengthToDraw - currentLength) / cornerRadius) * (180 / .pi)
+                    path.appendArc(withCenter: NSPoint(x: rect.maxX - cornerRadius, y: rect.minY + cornerRadius),
+                                   radius: cornerRadius, startAngle: 0, endAngle: angle, clockwise: true)
+                    path.lineWidth = lineWidth
+                    path.stroke()
+                    NSGraphicsContext.current?.restoreGraphicsState()
+                    return
+                }
+
+                // Bottom edge
+                if currentLength + topLength <= lengthToDraw {
+                    path.line(to: NSPoint(x: rect.minX + cornerRadius, y: rect.minY))
+                    currentLength += topLength
+                } else {
+                    path.line(to: NSPoint(x: rect.maxX - cornerRadius - (lengthToDraw - currentLength), y: rect.minY))
+                    path.lineWidth = lineWidth
+                    path.stroke()
+                    NSGraphicsContext.current?.restoreGraphicsState()
+                    return
+                }
+
+                // Bottom-left corner arc
+                if currentLength + arcLength <= lengthToDraw {
+                    path.appendArc(withCenter: NSPoint(x: rect.minX + cornerRadius, y: rect.minY + cornerRadius),
+                                   radius: cornerRadius, startAngle: -90, endAngle: -180, clockwise: true)
+                    currentLength += arcLength
+                } else {
+                    let angle = -90 - ((lengthToDraw - currentLength) / cornerRadius) * (180 / .pi)
+                    path.appendArc(withCenter: NSPoint(x: rect.minX + cornerRadius, y: rect.minY + cornerRadius),
+                                   radius: cornerRadius, startAngle: -90, endAngle: angle, clockwise: true)
+                    path.lineWidth = lineWidth
+                    path.stroke()
+                    NSGraphicsContext.current?.restoreGraphicsState()
+                    return
+                }
+
+                // Left edge
+                if currentLength + rightLength <= lengthToDraw {
+                    path.line(to: NSPoint(x: rect.minX, y: rect.maxY - cornerRadius))
+                    currentLength += rightLength
+                } else {
+                    path.line(to: NSPoint(x: rect.minX, y: rect.minY + cornerRadius + (lengthToDraw - currentLength)))
+                    path.lineWidth = lineWidth
+                    path.stroke()
+                    NSGraphicsContext.current?.restoreGraphicsState()
+                    return
+                }
+
+                // Top-left corner arc
+                if currentLength + arcLength <= lengthToDraw {
+                    path.appendArc(withCenter: NSPoint(x: rect.minX + cornerRadius, y: rect.maxY - cornerRadius),
+                                   radius: cornerRadius, startAngle: 180, endAngle: 90, clockwise: true)
+                } else {
+                    let angle = 180 - ((lengthToDraw - currentLength) / cornerRadius) * (180 / .pi)
+                    path.appendArc(withCenter: NSPoint(x: rect.minX + cornerRadius, y: rect.maxY - cornerRadius),
+                                   radius: cornerRadius, startAngle: 180, endAngle: angle, clockwise: true)
+                }
+
+                path.lineWidth = lineWidth
+                path.lineCapStyle = .round
+                path.stroke()
+
+                NSGraphicsContext.current?.restoreGraphicsState()
             } else {
-                // Not selected: subtle gray border
+                // Not selected and not in countdown: subtle gray border
                 NSColor.gray.withAlphaComponent(0.3).setStroke()
                 let borderPath = NSBezierPath(roundedRect: imageRect, xRadius: 8, yRadius: 8)
                 borderPath.lineWidth = 1
@@ -1471,7 +1621,7 @@ class ThumbnailNSView: NSView {
             }
 
             // Always show checkbox (smaller, square with rounded corners)
-            let checkboxSize: CGFloat = 16
+            let checkboxSize: CGFloat = 14
             let checkboxRect = NSRect(
                 x: imageRect.minX + 4,
                 y: imageRect.maxY - checkboxSize - 4,
@@ -1482,7 +1632,7 @@ class ThumbnailNSView: NSView {
             NSGraphicsContext.current?.saveGraphicsState()
 
             // Draw checkbox rounded square with fill
-            let cornerRadius: CGFloat = 4
+            let cornerRadius: CGFloat = 3
             let squarePath = NSBezierPath(roundedRect: checkboxRect, xRadius: cornerRadius, yRadius: cornerRadius)
             if isSelected {
                 NSColor.systemBlue.setFill()
@@ -1493,12 +1643,12 @@ class ThumbnailNSView: NSView {
 
             // Draw white border
             NSColor.white.setStroke()
-            squarePath.lineWidth = 2
+            squarePath.lineWidth = 1.5
             squarePath.stroke()
 
             // Draw checkmark icon if selected
             if isSelected {
-                let iconSize: CGFloat = 10
+                let iconSize: CGFloat = 8
                 let iconRect = NSRect(
                     x: checkboxRect.midX - iconSize / 2,
                     y: checkboxRect.midY - iconSize / 2,
@@ -1513,98 +1663,55 @@ class ThumbnailNSView: NSView {
 
             NSGraphicsContext.current?.restoreGraphicsState()
 
-            // Draw expiring indicator with circular progress (<= 30 seconds)
+            // Show smooth waving hand animation when <= 5 seconds remain
             let secondsRemaining = secondsUntilExpiration(for: screenshot)
-
-            // Show waving hand when <= 5 seconds remain
             if secondsRemaining <= 5 && secondsRemaining > 0 {
                 NSGraphicsContext.current?.saveGraphicsState()
 
-                // Darken the entire screenshot
-                NSColor.black.withAlphaComponent(0.5).setFill()
+                // Calculate smooth fade opacity based on remaining time
+                // Fade in from 5s to 3s, stay solid from 3s to 1s, then pulse at final second
+                let darkenAlpha: CGFloat
+                let emojiAlpha: CGFloat
+
+                if secondsRemaining > 3 {
+                    // Fade in: 5s (0.2) -> 3s (0.6)
+                    let fadeProgress = (5.0 - CGFloat(secondsRemaining)) / 2.0
+                    darkenAlpha = 0.2 + (fadeProgress * 0.4)
+                    emojiAlpha = 0.5 + (fadeProgress * 0.5)
+                } else if secondsRemaining > 1 {
+                    // Stay solid
+                    darkenAlpha = 0.6
+                    emojiAlpha = 1.0
+                } else {
+                    // Final second: pulse to maximum darkness
+                    darkenAlpha = 0.7
+                    emojiAlpha = 1.0
+                }
+
+                // Darken the screenshot with smooth fade
+                NSColor.black.withAlphaComponent(darkenAlpha).setFill()
                 let darkenRect = NSBezierPath(roundedRect: imageRect, xRadius: 8, yRadius: 8)
                 darkenRect.fill()
 
-                // Draw large waving hand in center
+                // Draw waving hand with smooth fade
                 let waveEmoji = "👋"
+                let emojiSize: CGFloat = 48
                 let emojiAttributes: [NSAttributedString.Key: Any] = [
-                    .font: NSFont.systemFont(ofSize: 48)
+                    .font: NSFont.systemFont(ofSize: emojiSize),
+                    .foregroundColor: NSColor.white.withAlphaComponent(emojiAlpha)
                 ]
-                let emojiSize = (waveEmoji as NSString).size(withAttributes: emojiAttributes)
+
+                // Add slight offset for "waving" effect based on time
+                let waveOffset = sin(CGFloat(Date().timeIntervalSince1970) * 3) * 3
+
+                let textSize = (waveEmoji as NSString).size(withAttributes: emojiAttributes)
                 let emojiRect = NSRect(
-                    x: imageRect.midX - emojiSize.width / 2,
-                    y: imageRect.midY - emojiSize.height / 2,
-                    width: emojiSize.width,
-                    height: emojiSize.height
-                )
-                (waveEmoji as NSString).draw(in: emojiRect, withAttributes: emojiAttributes)
-
-                NSGraphicsContext.current?.restoreGraphicsState()
-            } else if secondsRemaining <= 30 && secondsRemaining > 5 {
-                // Show countdown ring for 30-5 seconds
-                let badgeSize: CGFloat = 36
-                // Position half outside, half inside the image on top-right edge
-                let badgeRect = NSRect(
-                    x: imageRect.maxX - (badgeSize / 2),
-                    y: imageRect.maxY - (badgeSize / 2),
-                    width: badgeSize,
-                    height: badgeSize
-                )
-
-                NSGraphicsContext.current?.saveGraphicsState()
-
-                // Calculate progress (0.0 to 1.0, where 1.0 is full circle at 30s)
-                let progress = CGFloat(secondsRemaining) / 30.0
-
-                // Determine color based on remaining time
-                let progressColor: NSColor
-                if secondsRemaining > 20 {
-                    // Yellow (30-20s)
-                    progressColor = NSColor.systemYellow
-                } else if secondsRemaining > 10 {
-                    // Orange (20-10s)
-                    progressColor = NSColor.systemOrange
-                } else {
-                    // Red (10-5s)
-                    progressColor = NSColor.systemRed
-                }
-
-                // Draw progress arc (from top, clockwise)
-                let center = NSPoint(x: badgeRect.midX, y: badgeRect.midY)
-                let radius = (badgeRect.width - 8) / 2
-                let lineWidth: CGFloat = 4
-
-                // Start angle at top (90 degrees), sweep clockwise
-                let startAngle: CGFloat = 90
-                let endAngle = startAngle - (360 * progress)
-
-                let progressArc = NSBezierPath()
-                progressArc.appendArc(
-                    withCenter: center,
-                    radius: radius,
-                    startAngle: startAngle,
-                    endAngle: endAngle,
-                    clockwise: true
-                )
-                progressColor.setStroke()
-                progressArc.lineWidth = lineWidth
-                progressArc.lineCapStyle = .round
-                progressArc.stroke()
-
-                // Draw countdown text in center without background
-                let countdownText = "\(secondsRemaining)s"
-                let textAttributes: [NSAttributedString.Key: Any] = [
-                    .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular),
-                    .foregroundColor: progressColor
-                ]
-                let textSize = (countdownText as NSString).size(withAttributes: textAttributes)
-                let textRect = NSRect(
-                    x: center.x - textSize.width / 2,
-                    y: center.y - textSize.height / 2,
+                    x: imageRect.midX - textSize.width / 2 + waveOffset,
+                    y: imageRect.midY - textSize.height / 2,
                     width: textSize.width,
                     height: textSize.height
                 )
-                (countdownText as NSString).draw(in: textRect, withAttributes: textAttributes)
+                (waveEmoji as NSString).draw(in: emojiRect, withAttributes: emojiAttributes)
 
                 NSGraphicsContext.current?.restoreGraphicsState()
             }
