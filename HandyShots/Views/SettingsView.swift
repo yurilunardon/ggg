@@ -29,6 +29,11 @@ struct SettingsView: View {
     /// Delete mode: hideFromView or deleteFromDisk
     @AppStorage("deleteMode") private var deleteMode: String = "hideFromView"
 
+    // MARK: - State Properties
+
+    /// Highlighted section (for navigation from badges)
+    @State private var highlightedSection: String? = nil
+
     // MARK: - Body
 
     var body: some View {
@@ -73,6 +78,20 @@ struct SettingsView: View {
             }
         }
         .frame(width: 400, height: 450)
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("HighlightSettingsSection"))) { notification in
+            if let section = notification.userInfo?["section"] as? String {
+                // Highlight the section
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    highlightedSection = section
+                }
+                // Remove highlight after 2 seconds
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                    withAnimation(.easeInOut(duration: 0.5)) {
+                        highlightedSection = nil
+                    }
+                }
+            }
+        }
     }
 
     // MARK: - Header
@@ -109,25 +128,35 @@ struct SettingsView: View {
                 .font(.subheadline)
                 .foregroundColor(.secondary)
 
-            // Current folder display
+            // Current folder display (clickable to open in Finder)
             VStack(alignment: .leading, spacing: 8) {
                 Text("Current Folder:")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .fontWeight(.medium)
 
-                HStack {
-                    Text(folderMonitor.currentFolder)
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(.primary)
-                        .lineLimit(2)
-                        .truncationMode(.middle)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.gray.opacity(0.1))
-                        .cornerRadius(6)
+                Button(action: {
+                    openFolderInFinder()
+                }) {
+                    HStack(spacing: 6) {
+                        Text(folderMonitor.currentFolder)
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundColor(.primary)
+                            .lineLimit(2)
+                            .truncationMode(.middle)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                        Image(systemName: "arrow.up.forward.square")
+                            .font(.system(size: 12))
+                            .foregroundColor(.blue)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Color.gray.opacity(0.1))
+                    .cornerRadius(6)
                 }
+                .buttonStyle(.plain)
+                .help("Click to open folder in Finder")
             }
 
             // Change folder button
@@ -148,6 +177,20 @@ struct SettingsView: View {
             }
             .buttonStyle(.plain)
         }
+        .padding(12)
+        .background(
+            highlightedSection == "folder" ?
+                Color.blue.opacity(0.15) : Color.clear
+        )
+        .cornerRadius(8)
+        .animation(.easeInOut(duration: 0.3), value: highlightedSection)
+    }
+
+    /// Open the current folder in Finder
+    private func openFolderInFinder() {
+        let folderURL = URL(fileURLWithPath: folderMonitor.currentFolder)
+        NSWorkspace.shared.open(folderURL)
+        print("📂 Opening folder in Finder: \(folderMonitor.currentFolder)")
     }
 
     /// Open folder picker to change screenshot folder
@@ -232,6 +275,13 @@ struct SettingsView: View {
                 }
             }
         }
+        .padding(12)
+        .background(
+            highlightedSection == "timeFilter" ?
+                Color.green.opacity(0.15) : Color.clear
+        )
+        .cornerRadius(8)
+        .animation(.easeInOut(duration: 0.3), value: highlightedSection)
     }
 
     // MARK: - Drag Mode Section

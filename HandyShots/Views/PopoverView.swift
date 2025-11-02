@@ -238,23 +238,6 @@ struct PopoverView: View {
                 .disabled(selectedScreenshots.isEmpty)
                 .help(selectedScreenshots.isEmpty ? "No items selected" : "Deselect all")
 
-                // Selection counter (when items selected)
-                if !selectedScreenshots.isEmpty {
-                    HStack(spacing: 3) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 10))
-                            .foregroundColor(.white)
-                        Text("\(selectedScreenshots.count)")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundColor(.white)
-                    }
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(Color.blue)
-                    .cornerRadius(4)
-                    .help("\(selectedScreenshots.count) screenshot\(selectedScreenshots.count == 1 ? "" : "s") selected")
-                }
-
                 // Trash button
                 Button(action: { deleteSelectedScreenshots() }) {
                     Image(systemName: "trash")
@@ -264,6 +247,23 @@ struct PopoverView: View {
                 .buttonStyle(.plain)
                 .disabled(selectedScreenshots.isEmpty)
                 .help(selectedScreenshots.isEmpty ? "No items selected" : "Delete \(selectedScreenshots.count) screenshot\(selectedScreenshots.count == 1 ? "" : "s") (⌫)")
+
+                // Selection counter (when items selected) - n/N format
+                if !selectedScreenshots.isEmpty {
+                    HStack(spacing: 3) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(.white)
+                        Text("\(selectedScreenshots.count)/\(screenshots.count)")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color.blue)
+                    .cornerRadius(4)
+                    .help("\(selectedScreenshots.count) of \(screenshots.count) screenshot\(screenshots.count == 1 ? "" : "s") selected")
+                }
 
                 Spacer()
             }
@@ -771,13 +771,15 @@ struct PopoverView: View {
     /// Open Settings to folder section
     private func openSettingsToFolder() {
         openSettings()
-        // TODO: Navigate to folder section in Settings
+        // Notify to highlight folder section
+        NotificationCenter.default.post(name: NSNotification.Name("HighlightSettingsSection"), object: nil, userInfo: ["section": "folder"])
     }
 
     /// Open Settings to time filter section
     private func openSettingsToTimeFilter() {
         openSettings()
-        // TODO: Navigate to time filter section in Settings
+        // Notify to highlight time filter section
+        NotificationCenter.default.post(name: NSNotification.Name("HighlightSettingsSection"), object: nil, userInfo: ["section": "timeFilter"])
     }
 
     // MARK: - Screenshot Management
@@ -1468,20 +1470,47 @@ class ThumbnailNSView: NSView {
                 // Calculate progress (0.0 to 1.0, where 1.0 is full border at 30s)
                 let progress = CGFloat(secondsRemaining) / 30.0
 
-                // Determine color with smooth gradient
+                // Smooth color interpolation based on remaining time
+                // Color gradient: Green (30s) -> Yellow (22s) -> Orange (15s) -> Red (8s) -> Dark Red (5s)
                 let borderColor: NSColor
-                if secondsRemaining > 25 {
-                    borderColor = NSColor.systemGreen
-                } else if secondsRemaining > 20 {
-                    borderColor = NSColor.systemYellow
-                } else if secondsRemaining > 15 {
-                    borderColor = NSColor.systemOrange
-                } else if secondsRemaining > 10 {
-                    borderColor = NSColor(calibratedRed: 1.0, green: 0.4, blue: 0.0, alpha: 1.0) // Deep orange
-                } else if secondsRemaining > 7 {
-                    borderColor = NSColor.systemRed
+                let t = CGFloat(secondsRemaining)
+
+                if t > 22 {
+                    // Green to Yellow (30s -> 22s)
+                    let factor = (t - 22) / 8  // 0.0 at 22s, 1.0 at 30s
+                    borderColor = NSColor(
+                        calibratedRed: 0.2 + (factor * 0.8),  // Yellow=1.0, Green=0.2
+                        green: 0.8,                            // Both have high green
+                        blue: 0.0,
+                        alpha: 1.0
+                    )
+                } else if t > 15 {
+                    // Yellow to Orange (22s -> 15s)
+                    let factor = (t - 15) / 7  // 0.0 at 15s, 1.0 at 22s
+                    borderColor = NSColor(
+                        calibratedRed: 1.0,
+                        green: 0.5 + (factor * 0.3),  // Orange=0.5, Yellow=0.8
+                        blue: 0.0,
+                        alpha: 1.0
+                    )
+                } else if t > 8 {
+                    // Orange to Red (15s -> 8s)
+                    let factor = (t - 8) / 7  // 0.0 at 8s, 1.0 at 15s
+                    borderColor = NSColor(
+                        calibratedRed: 1.0,
+                        green: 0.0 + (factor * 0.5),  // Red=0.0, Orange=0.5
+                        blue: 0.0,
+                        alpha: 1.0
+                    )
                 } else {
-                    borderColor = NSColor(calibratedRed: 0.8, green: 0.0, blue: 0.0, alpha: 1.0) // Dark red
+                    // Red to Dark Red (8s -> 5s)
+                    let factor = (t - 5) / 3  // 0.0 at 5s, 1.0 at 8s
+                    borderColor = NSColor(
+                        calibratedRed: 0.7 + (factor * 0.3),  // Dark Red=0.7, Red=1.0
+                        green: 0.0,
+                        blue: 0.0,
+                        alpha: 1.0
+                    )
                 }
 
                 // Draw the countdown border as a path that decreases
@@ -1692,26 +1721,55 @@ class ThumbnailNSView: NSView {
                 let darkenRect = NSBezierPath(roundedRect: imageRect, xRadius: 8, yRadius: 8)
                 darkenRect.fill()
 
-                // Draw waving hand with smooth fade
+                // Draw waving hand with smooth fade and realistic animation
                 let waveEmoji = "👋"
-                let emojiSize: CGFloat = 48
+                let emojiSize: CGFloat = 56  // Slightly larger for more presence
+
+                // Create realistic waving animation
+                let time = Date().timeIntervalSince1970
+                let waveSpeed: Double = 4.0  // Faster waving
+
+                // Horizontal movement (back and forth)
+                let horizontalOffset = sin(time * waveSpeed) * 8
+
+                // Vertical movement (slight up and down)
+                let verticalOffset = sin(time * waveSpeed * 2) * 3
+
+                // Rotation angle for waving effect (-15° to +15°)
+                let rotationAngle = sin(time * waveSpeed) * 15  // degrees
+
+                // Calculate center position with offsets
+                let centerX = imageRect.midX + horizontalOffset
+                let centerY = imageRect.midY + verticalOffset
+
+                // Save graphics state for transformation
+                NSGraphicsContext.current?.saveGraphicsState()
+
+                // Apply rotation transform
+                let transform = NSAffineTransform()
+                transform.translateX(by: centerX, yBy: centerY)
+                transform.rotate(byDegrees: rotationAngle)
+                transform.concat()
+
+                // Draw emoji at origin (transformation applied)
                 let emojiAttributes: [NSAttributedString.Key: Any] = [
                     .font: NSFont.systemFont(ofSize: emojiSize),
                     .foregroundColor: NSColor.white.withAlphaComponent(emojiAlpha)
                 ]
 
-                // Add slight offset for "waving" effect based on time
-                let waveOffset = sin(CGFloat(Date().timeIntervalSince1970) * 3) * 3
-
                 let textSize = (waveEmoji as NSString).size(withAttributes: emojiAttributes)
                 let emojiRect = NSRect(
-                    x: imageRect.midX - textSize.width / 2 + waveOffset,
-                    y: imageRect.midY - textSize.height / 2,
+                    x: -textSize.width / 2,
+                    y: -textSize.height / 2,
                     width: textSize.width,
                     height: textSize.height
                 )
                 (waveEmoji as NSString).draw(in: emojiRect, withAttributes: emojiAttributes)
 
+                // Restore transformation
+                NSGraphicsContext.current?.restoreGraphicsState()
+
+                // Restore main graphics state
                 NSGraphicsContext.current?.restoreGraphicsState()
             }
         }
